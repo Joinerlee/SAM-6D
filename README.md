@@ -66,7 +66,7 @@ Install the environment:
 conda env create -f environment.yaml
 conda activate sam6d
 ```
-Download the model checkpoints and build PointNet2.0:
+Download the model checkpoints and build PointNet2:
 ```shell
 sh prepare.sh
 ```
