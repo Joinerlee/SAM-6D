@@ -1,22 +1,26 @@
 name: sam6d
 channels:
-  - xformers
-  - conda-forge
-  - pytorch
-  - nvidia
   - defaults
+  - pytorch
+  - nvidia/label/cuda-12.1.0
+  - conda-forge
 dependencies:
   - pip
-  - python=3.9.6
-  - cuda=12.0
-  - libxcrypt
+  - python=3.9
+  - nvidia/label/cuda-12.1.0::cuda
+  - nvidia/label/cuda-12.1.0::cuda-toolkit
+  - nvidia/label/cuda-12.1.0::cuda-nvrtc
+  - nvidia/label/cuda-12.1.0::cuda-tools
+  - nvidia/label/cuda-12.1.0::libcufile
+  - pytorch::pytorch-cuda=12.1
+  - pytorch::pytorch
+  - pytorch::torchvision
+  - pytorch::torchaudio
+  - conda-forge::torchmetrics
   - pip:
-    - torch==2.2.1
-    - torchvision
     - fvcore
     - xformers
-    - torchmetrics
-    - blenderproc==2.7.0
+    - blenderproc
     - opencv-python
     # ISM 
     - omegaconf
@@ -27,15 +31,15 @@ dependencies:
     - pandas
     - imageio
     - pyrender
-    - pytorch-lightning==1.8.1
-    - pycocotools 
+    - pytorch-lightning
+    - pycocotools
     - distinctipy
     - git+https://github.com/facebookresearch/segment-anything.git  # SAM
-    - ultralytics==8.0.135  # FastSAM
+    - ultralytics  # FastSAM
     # PEM
     - timm
-    - gorilla-core==0.2.7.8
-    - trimesh==4.0.8
-    - gpustat==1.0.0
+    - gorilla-core
+    - trimesh
+    - gpustat
     - imgaug
     - einops
