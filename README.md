@@ -33,8 +33,8 @@ In this work, we employ Segment Anything Model as an advanced starting point for
 ## Getting Started
 
 ### 0. Prerequisites
-- **Linux** (tested on Ubuntu 20.04 and 22.04)
-- **NVIDIA drivers** (tested with 525 and 535)
+- **Linux** (tested on Ubuntu 22.04)
+- **NVIDIA drivers** (tested with 535)
 - **Anaconda** (see below for Installation)
 - If running on **non-local machines**: `sudo apt install xorg`
 
