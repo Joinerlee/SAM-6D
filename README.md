@@ -35,14 +35,13 @@ In this work, we employ Segment Anything Model as an advanced starting point for
 ### 0. Prerequisites
 - **Linux** (tested on Ubuntu 20.04 and 22.04)
 - **NVIDIA drivers** (tested with 525 and 535)
-- **CUDA** (tested with 12.0 and 12.2)
 - **Anaconda** (see below for Installation)
-- If running on **non-local machines**, i.e. cloud servers or VMs, ensure that x11 is available: `sudo apt install xorg`
+- If running on **non-local machines**: `sudo apt install xorg`
 
 <details>
 <summary>Optional: Installation of Anaconda</summary>
 
-Run the code below, to install the latest version of Miniconda, or refer to the [Anaconda documentation](https://docs.anaconda.com/) to install Anaconda.
+Run the code below, to install the latest version of Miniconda, or refer to the [Anaconda documentation](https://docs.anaconda.com/).
 
 ```bash
 wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda.sh &&
@@ -67,7 +66,7 @@ Install the environment:
 conda env create -f environment.yaml
 conda activate sam6d
 ```
-Download the model checkpoints:
+Download the model checkpoints and build PointNet2.0:
 ```shell
 sh prepare.sh
 ```
@@ -86,7 +85,8 @@ To run inference the following **environment variables** must be set:
 
 Run inference on the [**example data**](https://github.com/JiehongLin/SAM-6D/tree/main/SAM-6D/Data/Example):
 ```shell
-# export example variables, must be executed from SAM-6D/SAM-6D directory containg the Data folder
+# export example variables
+# must be executed from SAM-6D/SAM-6D directory containg the Data folder
 export CAD_PATH=$PWD/Data/Example/obj_000005.ply
 export RGB_PATH=$PWD/Data/Example/rgb.png
 export DEPTH_PATH=$PWD/Data/Example/depth.png
