@@ -67,13 +67,8 @@ def main(args):
     
     print("\n's' 키를 눌러 데이터를 저장하고, 'q' 또는 ESC 키를 눌러 종료하세요.")
 
-    # 직접 BGR 이미지를 검색할 수 있도록 사용할 VIEW 타입 설정
-    view_mode = sl.VIEW.LEFT  # 일반 왼쪽 카메라 뷰
-    depth_mode = sl.MEASURE.DEPTH
-    
-    # BGR 이미지와 Depth 이미지를 위한 NumPy 배열 준비
-    color_image_bgr = None
-    depth_map = None
+    # 디스플레이 플래그 - 처음에만, 혹은 디버깅 정보가 필요할 때만 True로 설정
+    show_debug_info = True
     
     try:
         while True:
@@ -82,66 +77,34 @@ def main(args):
                 # 이미지 및 Depth 데이터 검색 - 에러 처리와 함께
                 try:
                     # 1. 이미지 검색
-                    err = zed.retrieve_image(image_zed, view_mode)
-                    if err != sl.ERROR_CODE.SUCCESS:
-                        print(f"이미지 검색 실패: {err}")
-                        continue
+                    zed.retrieve_image(image_zed, sl.VIEW.LEFT)
                     
                     # 2. Depth 맵 검색
-                    err = zed.retrieve_measure(depth_zed, depth_mode)
-                    if err != sl.ERROR_CODE.SUCCESS:
-                        print(f"Depth 맵 검색 실패: {err}")
-                        continue
+                    zed.retrieve_measure(depth_zed, sl.MEASURE.DEPTH)
                     
                     # 3. NumPy 배열로 변환
-                    color_image_rgba = image_zed.get_data()
+                    color_image = image_zed.get_data()
+                    depth_map = depth_zed.get_data()
                     
-                    # 4. 배열 유효성 확인
-                    if color_image_rgba is None or color_image_rgba.size == 0:
-                        print("이미지 데이터가 유효하지 않습니다. 다시 시도합니다.")
+                    # 4. 데이터 유효성 검사
+                    if color_image is None or depth_map is None or color_image.size == 0 or depth_map.size == 0:
+                        print("유효하지 않은 카메라 데이터, 다시 시도합니다...")
                         continue
                     
-                    # 5. RGBA에서 BGR로 변환 (이제 데이터가 올바르게 로드됨)
-                    color_image_bgr = cv2.cvtColor(color_image_rgba, cv2.COLOR_RGBA2BGR)
+                    # 4. RGBA에서 BGR로 변환 (필요한 경우)
+                    if color_image.shape[2] == 4:  # RGBA 형식인 경우
+                        color_image_bgr = cv2.cvtColor(color_image, cv2.COLOR_RGBA2BGR)
+                    else:  # 이미 BGR인 경우
+                        color_image_bgr = color_image
                     
-                    # 6. 깊이 맵 가져오기 및 유효성 확인
-                    # 깊이 맵을 NumPy 배열로 명시적 변환하여 문제 해결
-                    depth_data = depth_zed.get_data()
-                    if depth_data is None or depth_data.size == 0:
-                        print("깊이 데이터가 유효하지 않습니다. 다시 시도합니다.")
-                        continue
-                    
-                    # 명시적으로 깊이 맵을 float32 NumPy 배열로 복사
-                    depth_map = np.array(depth_data, dtype=np.float32)
-                    
-                    # 디버그 정보 출력
-                    print(f"컬러 이미지 형태: {color_image_bgr.shape}, 타입: {color_image_bgr.dtype}")
-                    print(f"깊이 맵 형태: {depth_map.shape}, 타입: {depth_map.dtype}")
-                    
+                    # 디버그 정보 (첫 번째 프레임이나 디버깅이 필요할 때만 표시)
+                    if show_debug_info:
+                        print(f"컬러 이미지 형태: {color_image_bgr.shape}, 타입: {color_image_bgr.dtype}")
+                        print(f"깊이 맵 형태: {depth_map.shape}, 타입: {depth_map.dtype}")
+                        show_debug_info = False  # 한 번만 표시
+                        
                 except Exception as e:
-                    print(f"데이터 검색/변환 오류: {str(e)}. 다시 시도합니다...")
-                    # 스택 트레이스 출력
-                    import traceback
-                    traceback.print_exc()
-                    continue
-                
-                # Depth 맵의 NaN/Inf 값 처리 (0으로 대체)
-                depth_map = np.nan_to_num(depth_map, nan=0.0, posinf=0.0, neginf=0.0)
-                
-                # 표시용 Depth 이미지 생성
-                try:
-                    # 최소/최대값 확인
-                    min_val = np.min(depth_map)
-                    max_val = np.max(depth_map)
-                    print(f"깊이 맵 범위: {min_val} ~ {max_val}")
-                    
-                    # 8비트로 정규화
-                    depth_display = cv2.normalize(depth_map, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
-                    depth_colormap = cv2.applyColorMap(depth_display, cv2.COLORMAP_JET)
-                except Exception as e:
-                    print(f"깊이 맵 정규화 오류: {str(e)}")
-                    import traceback
-                    traceback.print_exc()
+                    print(f"이미지 처리 오류: {str(e)}")
                     continue
                 
                 # SAM-6D 필요 해상도로 리사이징 (필요한 경우)
@@ -152,31 +115,40 @@ def main(args):
                     sam6d_color = color_image_bgr
                     sam6d_depth = depth_map
                 
-                # 디스플레이 크기 조정 (너무 큰 경우를 대비)
-                display_scale = 1.0
-                if img_width > 800:  # 화면이 너무 클 경우 축소
-                    display_scale = 800 / (img_width * 2)  # 두 이미지를 나란히 표시하므로 2배 고려
+                # Depth 맵의 NaN/Inf 값 처리 (0으로 대체)
+                sam6d_depth = np.nan_to_num(sam6d_depth, nan=0.0, posinf=0.0, neginf=0.0)
                 
-                if display_scale < 1.0:
-                    display_width = int(img_width * display_scale)
-                    display_height = int(img_height * display_scale)
-                    display_color = cv2.resize(color_image_bgr, (display_width, display_height))
-                    display_depth = cv2.resize(depth_colormap, (display_width, display_height))
-                else:
-                    display_color = color_image_bgr
-                    display_depth = depth_colormap
+                # 표시용 Depth 이미지 생성
+                try:
+                    # 범위가 있는 데이터만 표시
+                    if np.max(sam6d_depth) > np.min(sam6d_depth):
+                        depth_display = cv2.normalize(sam6d_depth, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
+                        depth_colormap = cv2.applyColorMap(depth_display, cv2.COLORMAP_JET)
+                    else:
+                        # 깊이 데이터가 모두 같은 경우 (일정한 패턴으로 초기화)
+                        depth_colormap = np.zeros_like(sam6d_color)
+                except Exception as e:
+                    print(f"깊이 맵 시각화 오류: {str(e)}")
+                    depth_colormap = np.zeros_like(sam6d_color)
                 
-                # 원본 이미지와 Depth 맵을 가로로 합치기
-                display_image = np.hstack((display_color, display_depth))
-                
-                # 설명 텍스트 추가
-                cv2.putText(display_image, f"ZED 해상도: {img_width}x{img_height}", (10, 30), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                cv2.putText(display_image, f"SAM-6D 해상도: 640x480", (10, 60), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-
-                # 이미지 보여주기
-                cv2.imshow("ZED 카메라 | SAM-6D용 캡처", display_image)
+                # 이미지 및 깊이 맵 표시 준비
+                try:
+                    # 이미지 크기 맞추기
+                    if sam6d_color.shape[0:2] != depth_colormap.shape[0:2]:
+                        depth_colormap = cv2.resize(depth_colormap, (sam6d_color.shape[1], sam6d_color.shape[0]))
+                    
+                    # 원본 이미지와 Depth 맵을 가로로 합치기
+                    display_image = np.hstack((sam6d_color, depth_colormap))
+                    
+                    # 설명 텍스트 추가
+                    cv2.putText(display_image, f"ZED: {img_width}x{img_height} | SAM-6D: 640x480", (10, 30), 
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+    
+                    # 이미지 보여주기
+                    cv2.imshow("ZED 카메라 | SAM-6D용 캡처", display_image)
+                except Exception as e:
+                    print(f"디스플레이 오류: {str(e)}")
+                    continue
 
                 # --- 키 처리 ---
                 key = cv2.waitKey(1) & 0xFF
