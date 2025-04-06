@@ -65,6 +65,15 @@ def main(args):
     else:
         print("SAM-6D 호환 해상도(640x480)로 설정되었습니다.")
     
+    # CAD 모델 경로 확인 및 표시
+    cad_path = args.cad_path
+    if cad_path and os.path.exists(cad_path):
+        print(f"CAD 모델: {cad_path}")
+    elif cad_path:
+        print(f"주의: 지정한 CAD 모델 파일({cad_path})을 찾을 수 없습니다.")
+    else:
+        print("CAD 모델 경로가 지정되지 않았습니다.")
+    
     print("\n's' 키를 눌러 데이터를 저장하고, 'q' 또는 ESC 키를 눌러 종료하세요.")
 
     # 디스플레이 플래그 - 처음에만, 혹은 디버깅 정보가 필요할 때만 True로 설정
@@ -179,15 +188,14 @@ def main(args):
                     
                     print(f"SAM-6D용 데이터 저장 완료: {output_dir}")
                     
-                    # CAD 모델 확인 메시지
-                    if args.cad_path:
-                        print(f"CAD 모델 경로: {args.cad_path}")
-                    else:
-                        print("주의: CAD 모델 경로를 지정하지 않았습니다. SAM-6D 실행을 위해 CAD 모델이 필요합니다.")
+                    # CAD 모델 경로 출력
+                    cad_path_info = args.cad_path if args.cad_path else "/home/recl3090/SAM-6D/TAN.ply (기본값)"
+                    print(f"CAD 모델 경로: {cad_path_info}")
                     
                     # SAM-6D 실행 준비 완료 메시지
+                    used_cad_path = args.cad_path if args.cad_path else "/home/recl3090/SAM-6D/TAN.ply"
                     print("\nSAM-6D 실행 환경변수 예시:")
-                    print(f"export CAD_PATH=<your_cad_model_path.ply>")
+                    print(f"export CAD_PATH={used_cad_path}")
                     print(f"export RGB_PATH={os.path.abspath(rgb_path)}")
                     print(f"export DEPTH_PATH={os.path.abspath(depth_path)}")
                     print(f"export CAMERA_PATH={os.path.abspath(camera_path)}")
@@ -202,7 +210,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ZED 카메라를 사용하여 SAM-6D용 데이터 캡처")
     parser.add_argument("--output_dir", type=str, help="출력 디렉토리 경로")
-    parser.add_argument("--cad_path", type=str, help="CAD 모델 경로(.ply 파일)")
+    parser.add_argument("--cad_path", type=str, default="/home/recl3090/SAM-6D/TAN.ply", help="CAD 모델 경로(.ply 파일)")
     args = parser.parse_args()
     
     main(args) 
