@@ -74,7 +74,21 @@ def test_zed_camera():
             camera_info = zed.get_camera_information()
             model_name = camera_info.camera_model
             serial_number = camera_info.serial_number
-            firmware = camera_info.firmware_version
+            
+            # 펌웨어 버전을 안전하게 가져오기 (SDK 버전에 따라 다를 수 있음)
+            firmware = "알 수 없음"
+            try:
+                if hasattr(camera_info, "firmware_version"):
+                    firmware = camera_info.firmware_version
+                elif hasattr(camera_info, "camera_firmware_version"):
+                    firmware = camera_info.camera_firmware_version
+                else:
+                    # SDK 버전 출력
+                    sdk_version = sl.Camera().get_sdk_version()
+                    print(f"  ↳ ZED SDK 버전: {sdk_version}")
+            except Exception as e:
+                print(f"  ↳ 펌웨어 버전을 가져오는 중 오류 발생: {str(e)}")
+            
             resolution = camera_info.camera_configuration.resolution
             fps = camera_info.camera_configuration.fps
             
@@ -145,23 +159,53 @@ def test_sam6d_environment():
     print_status("SAM-6D Conda 환경 확인", is_sam6d_env, 
                 f"현재 Conda 환경은 '{conda_env}'입니다. 'conda activate sam6d'를 실행하세요.")
     
-    # 필수 Python 패키지 확인
-    required_packages = [
-        "torch", "torchvision", "opencv-cv2", "numpy", "xformers", 
+    # 필수 Python 패키지 확인 (PyTorch 관련 패키지 제외)
+    basic_packages = [
+        "opencv-cv2", "numpy", "xformers", 
         "pytorch_lightning", "distinctipy", "blenderproc", "trimesh"
     ]
     
     missing_packages = []
-    for package in required_packages:
+    for package in basic_packages:
         if not check_module_exists(package.replace("-", "_")):
             missing_packages.append(package)
     
+    # PyTorch 및 Torchvision 별도 확인 (에러 발생 가능성이 있음)
+    pytorch_status = {"torch": False, "torchvision": False}
+    pytorch_details = {}
+    
+    # PyTorch 확인
+    try:
+        import torch
+        pytorch_status["torch"] = True
+        pytorch_details["torch"] = torch.__version__
+    except Exception as e:
+        missing_packages.append("torch")
+        pytorch_details["torch"] = str(e)
+    
+    # Torchvision 확인 (PyTorch가 설치된 경우에만)
+    if pytorch_status["torch"]:
+        try:
+            import torchvision
+            pytorch_status["torchvision"] = True
+            pytorch_details["torchvision"] = torchvision.__version__
+        except Exception as e:
+            missing_packages.append("torchvision")
+            pytorch_details["torchvision"] = str(e)
+    
+    # 패키지 상태 보고
     packages_exist = len(missing_packages) == 0
     print_status("필수 Python 패키지 확인", packages_exist, 
                 f"누락된 패키지: {', '.join(missing_packages)}" if missing_packages else "")
     
-    # CUDA 확인
-    if check_module_exists("torch"):
+    # PyTorch와 Torchvision 상태 보고
+    if pytorch_status["torch"]:
+        print(f"  ↳ PyTorch 버전: {pytorch_details['torch']}")
+    if pytorch_status["torchvision"]:
+        print(f"  ↳ TorchVision 버전: {pytorch_details['torchvision']}")
+    
+    # CUDA 확인 (PyTorch가 성공적으로 로드된 경우만)
+    if pytorch_status["torch"]:
         import torch
         cuda_available = torch.cuda.is_available()
         cuda_version = torch.version.cuda if cuda_available else "없음"
