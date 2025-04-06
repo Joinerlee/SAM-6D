@@ -41,10 +41,16 @@ def main(args):
     intrinsics_dict = {"cam_K": cam_k}
     print(f"카메라 내부 파라미터 (fx, fy, cx, cy): {calibration_params.fx}, {calibration_params.fy}, {calibration_params.cx}, {calibration_params.cy}")
     
-    # 해상도 정보
+    # 해상도 정보 확인
     img_width = zed.get_camera_information().camera_configuration.resolution.width
     img_height = zed.get_camera_information().camera_configuration.resolution.height
     print(f"카메라 해상도: {img_width}x{img_height}")
+    
+    # SAM-6D 필요 해상도 확인 (이미 VGA로 설정했으므로 640x480이어야 함)
+    if img_width != 640 or img_height != 480:
+        print(f"경고: 현재 해상도({img_width}x{img_height})가 SAM-6D 대상 해상도(640x480)와 다릅니다.")
+    else:
+        print("SAM-6D 호환 해상도(640x480)로 설정되었습니다.")
     
     print("\n's' 키를 눌러 데이터를 저장하고, 'q' 또는 ESC 키를 눌러 종료하세요.")
 
@@ -53,9 +59,9 @@ def main(args):
             # 새로운 프레임 잡기
             if zed.grab(runtime_parameters) == sl.ERROR_CODE.SUCCESS:
                 # 왼쪽 컬러 이미지 검색
-                zed.retrieve_image(image_sl, sl.VIEW.LEFT, sl.MEM.CPU, (img_width, img_height))
+                zed.retrieve_image(image_sl, sl.VIEW.LEFT, sl.MEM.CPU)
                 # Depth 맵 검색
-                zed.retrieve_measure(depth_sl, sl.MEASURE.DEPTH, sl.MEM.CPU, (img_width, img_height))
+                zed.retrieve_measure(depth_sl, sl.MEASURE.DEPTH, sl.MEM.CPU)
 
                 # NumPy 배열로 변환
                 color_image_rgba = image_sl.get_data()
@@ -72,8 +78,22 @@ def main(args):
                 depth_display = cv2.normalize(depth_map, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
                 depth_colormap = cv2.applyColorMap(depth_display, cv2.COLORMAP_JET)
                 
+                # 디스플레이 크기 조정 (너무 큰 경우를 대비)
+                display_scale = 1.0
+                if img_width > 800:  # 화면이 너무 클 경우 축소
+                    display_scale = 800 / (img_width * 2)  # 두 이미지를 나란히 표시하므로 2배 고려
+                
+                if display_scale < 1.0:
+                    display_width = int(img_width * display_scale)
+                    display_height = int(img_height * display_scale)
+                    display_color = cv2.resize(color_image_bgr, (display_width, display_height))
+                    display_depth = cv2.resize(depth_colormap, (display_width, display_height))
+                else:
+                    display_color = color_image_bgr
+                    display_depth = depth_colormap
+                
                 # 원본 이미지와 Depth 맵을 가로로 합치기
-                display_image = np.hstack((color_image_bgr, depth_colormap))
+                display_image = np.hstack((display_color, display_depth))
                 
                 # 설명 텍스트 추가
                 cv2.putText(display_image, f"SAM-6D 해상도 ({img_width}x{img_height})", (10, 30), 
@@ -104,6 +124,7 @@ def main(args):
                     
                     # SAM-6D용 데이터 저장
                     cv2.imwrite(rgb_path, color_image_bgr)
+                    # 16비트 PNG로 깊이 맵 저장 (SAM-6D와 호환되도록)
                     cv2.imwrite(depth_path, depth_map.astype(np.uint16))
                     with open(camera_path, "w") as f:
                         json.dump(intrinsics_dict, f, indent=4)
