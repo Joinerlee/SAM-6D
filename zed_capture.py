@@ -121,6 +121,9 @@ def main(args):
                 
                 # NumPy 배열로 이미지 데이터 복사
                 image_rgb = image_zed.get_data()
+                # RGBA 이미지를 BGR로 변환 (채널 수 확인)
+                if image_rgb.shape[2] == 4:  # 4채널(RGBA) 이미지인 경우
+                    image_rgb = cv2.cvtColor(image_rgb, cv2.COLOR_RGBA2BGR)
                 
                 # 2. 깊이 맵 가져오기 (기본 해상도로)
                 retrieve_status = zed.retrieve_measure(depth_zed, sl.MEASURE.DEPTH)
@@ -130,6 +133,14 @@ def main(args):
                 
                 # NumPy 배열로 깊이 데이터 복사
                 depth_map = depth_zed.get_data()
+                # 깊이 맵이 유효한지 확인하고 float32로 변환
+                if depth_map is not None and depth_map.size > 0:
+                    depth_map = depth_map.astype(np.float32)
+                    # NaN 값과 무한대 값 처리
+                    depth_map = np.nan_to_num(depth_map, nan=0.0, posinf=0.0, neginf=0.0)
+                else:
+                    print("유효한 깊이 데이터를 가져오지 못했습니다")
+                    continue
                 
                 # 이미지 형태 확인 (디버깅용)
                 if "first_frame" not in locals():
@@ -140,8 +151,13 @@ def main(args):
                 # 중앙 640x480 영역 크롭
                 if crop_width >= 640 and crop_height >= 480:
                     # 이미지 크기가 충분히 큰 경우 - 중앙 크롭
-                    sam6d_color = image_rgb[start_y:start_y+480, start_x:start_x+640].copy()
-                    sam6d_depth = depth_map[start_y:start_y+480, start_x:start_x+640].copy()
+                    # 이미지가 3채널인지 확인
+                    if len(image_rgb.shape) == 3 and image_rgb.shape[2] == 3:
+                        sam6d_color = image_rgb[start_y:start_y+480, start_x:start_x+640].copy()
+                        sam6d_depth = depth_map[start_y:start_y+480, start_x:start_x+640].copy()
+                    else:
+                        print("이미지 형식 오류: 3채널(BGR) 이미지가 아닙니다")
+                        continue
                 else:
                     # 이미지 크기가 작은 경우 - 패딩 처리
                     sam6d_color = np.zeros((480, 640, 3), dtype=np.uint8)
@@ -153,9 +169,6 @@ def main(args):
                     
                     sam6d_color[pad_start_y:pad_start_y+crop_height, pad_start_x:pad_start_x+crop_width] = image_rgb[start_y:end_y, start_x:end_x].copy()
                     sam6d_depth[pad_start_y:pad_start_y+crop_height, pad_start_x:pad_start_x+crop_width] = depth_map[start_y:end_y, start_x:end_x].copy()
-                
-                # Depth 맵의 NaN/Inf 값 처리 (0으로 대체)
-                sam6d_depth = np.nan_to_num(sam6d_depth, nan=0.0, posinf=0.0, neginf=0.0)
                 
                 # 표시용 Depth 이미지 생성
                 try:
