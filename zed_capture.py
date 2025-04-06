@@ -20,8 +20,8 @@ def main(args):
     init_params.camera_image_flip = sl.FLIP_MODE.OFF  # 이미지 플립 없음
     init_params.enable_right_side_measure = False  # 오른쪽 카메라 측정 비활성화 (필요없음)
     
-    # SAM-6D 대상 해상도로 직접 설정 (640x480)
-    init_params.camera_resolution = sl.RESOLUTION.VGA  # VGA는 640x480 해상도
+    # 카메라를 기본 해상도로 설정 (VGA로 강제하지 않음)
+    # init_params.camera_resolution = sl.RESOLUTION.VGA  # 주석 처리
     init_params.camera_fps = 30  # 프레임 속도 설정
 
     # 카메라 열기
@@ -57,25 +57,30 @@ def main(args):
     # 해상도 정보 확인
     img_width = zed.get_camera_information().camera_configuration.resolution.width
     img_height = zed.get_camera_information().camera_configuration.resolution.height
-    print(f"카메라 해상도: {img_width}x{img_height}")
+    print(f"카메라 기본 해상도: {img_width}x{img_height}")
     
     # SAM-6D 필요 해상도 확인
-    if img_width != 640 or img_height != 480:
-        print(f"경고: 현재 해상도({img_width}x{img_height})가 SAM-6D 대상 해상도(640x480)와 다릅니다.")
-        print("중앙 기준으로 640x480 영역을 추출합니다.")
-        
-        # 크롭할 시작 위치 계산 (중앙 기준)
-        start_x = max(0, (img_width - 640) // 2)
-        start_y = max(0, (img_height - 480) // 2)
-        
-        # 내부 파라미터 조정 (크롭에 맞게)
-        intrinsics_dict["cam_K"][2] = calibration_params.cx - start_x  # cx 조정
-        intrinsics_dict["cam_K"][5] = calibration_params.cy - start_y  # cy 조정
-        
-        print(f"크롭 영역: ({start_x},{start_y})부터 640x480 크기")
-        print(f"조정된 카메라 내부 파라미터: cx={intrinsics_dict['cam_K'][2]}, cy={intrinsics_dict['cam_K'][5]}")
-    else:
-        print("SAM-6D 호환 해상도(640x480)로 설정되었습니다.")
+    print("중앙 기준으로 640x480 영역을 추출합니다.")
+    
+    # 크롭할 시작 위치 계산 (중앙 기준)
+    start_x = max(0, (img_width - 640) // 2)
+    start_y = max(0, (img_height - 480) // 2)
+    
+    # 내부 파라미터 조정 (크롭에 맞게)
+    new_cx = calibration_params.cx - start_x  # cx 조정
+    new_cy = calibration_params.cy - start_y  # cy 조정
+    
+    # 새로운 내부 파라미터 설정
+    intrinsics_dict = {
+        "cam_K": [
+            calibration_params.fx, 0.0, new_cx,
+            0.0, calibration_params.fy, new_cy,
+            0.0, 0.0, 1.0
+        ]
+    }
+    
+    print(f"크롭 영역: ({start_x},{start_y})부터 640x480 크기")
+    print(f"조정된 카메라 내부 파라미터: cx={new_cx}, cy={new_cy}")
     
     # CAD 모델 경로 확인 및 표시
     cad_path = args.cad_path
@@ -87,21 +92,17 @@ def main(args):
         print("CAD 모델 경로가 지정되지 않았습니다.")
     
     print("\n's' 키를 눌러 데이터를 저장하고, 'q' 또는 ESC 키를 눌러 종료하세요.")
-
-    # BGR 이미지와 Depth 이미지를 위한 NumPy 배열 미리 생성
-    image_rgb = np.zeros((img_height, img_width, 3), dtype=np.uint8)
-    depth_map = np.zeros((img_height, img_width), dtype=np.float32)
-    
-    # 첫 프레임에서만 정보 표시
-    first_frame = True
     
     # 크롭할 시작 위치 계산 (중앙 기준) - 루프 밖에서 미리 계산
-    start_x = max(0, (img_width - 640) // 2)
-    start_y = max(0, (img_height - 480) // 2)
     end_x = min(img_width, start_x + 640)
     end_y = min(img_height, start_y + 480)
     crop_width = end_x - start_x
     crop_height = end_y - start_y
+    
+    # 이미지 크기가 충분히 큰지 확인
+    if crop_width < 640 or crop_height < 480:
+        print(f"주의: 카메라 해상도({img_width}x{img_height})가 SAM-6D 목표 해상도(640x480)보다 작습니다.")
+        print(f"실제 크롭 크기: {crop_width}x{crop_height}")
     
     try:
         while True:
@@ -112,16 +113,16 @@ def main(args):
                 continue
                 
             try:
-                # 1. 이미지 데이터 가져오기 (BGR 형식으로) - 해상도 파라미터 없이 호출
+                # 1. 이미지 데이터 가져오기 (기본 해상도로)
                 retrieve_status = zed.retrieve_image(image_zed, sl.VIEW.LEFT)
                 if retrieve_status != sl.ERROR_CODE.SUCCESS:
                     print(f"이미지 검색 실패: {retrieve_status}, 다시 시도합니다...")
                     continue
                 
-                # NumPy 배열로 이미지 데이터 복사 (메모리 오류 방지)
+                # NumPy 배열로 이미지 데이터 복사
                 image_rgb = image_zed.get_data()
                 
-                # 2. 깊이 맵 가져오기 - 해상도 파라미터 없이 호출
+                # 2. 깊이 맵 가져오기 (기본 해상도로)
                 retrieve_status = zed.retrieve_measure(depth_zed, sl.MEASURE.DEPTH)
                 if retrieve_status != sl.ERROR_CODE.SUCCESS:
                     print(f"깊이 맵 검색 실패: {retrieve_status}, 다시 시도합니다...")
@@ -130,38 +131,28 @@ def main(args):
                 # NumPy 배열로 깊이 데이터 복사
                 depth_map = depth_zed.get_data()
                 
-                # 첫 프레임에서만 정보 출력
-                if first_frame:
-                    print(f"이미지 형태: {image_rgb.shape}, 타입: {image_rgb.dtype}")
-                    print(f"깊이 맵 형태: {depth_map.shape}, 타입: {depth_map.dtype}")
-                    non_zero_depth = depth_map[depth_map > 0]
-                    if non_zero_depth.size > 0:
-                        min_depth = np.min(non_zero_depth)
-                        max_depth = np.max(depth_map)
-                        print(f"깊이 범위: {min_depth:.1f}mm ~ {max_depth:.1f}mm")
+                # 이미지 형태 확인 (디버깅용)
+                if "first_frame" not in locals():
+                    print(f"원본 이미지 형태: {image_rgb.shape}, 타입: {image_rgb.dtype}")
+                    print(f"원본 깊이 맵 형태: {depth_map.shape}, 타입: {depth_map.dtype}")
                     first_frame = False
                 
-                # SAM-6D 필요 해상도로 처리 (필요한 경우)
-                if img_width != 640 or img_height != 480:
-                    # 중앙에서 640x480 영역 크롭하기
-                    if crop_width >= 640 and crop_height >= 480:
-                        # 이미지 크기가 충분히 큰 경우 - 중앙 크롭
-                        sam6d_color = image_rgb[start_y:start_y+480, start_x:start_x+640]
-                        sam6d_depth = depth_map[start_y:start_y+480, start_x:start_x+640]
-                    else:
-                        # 이미지 크기가 작은 경우 - 패딩 처리
-                        sam6d_color = np.zeros((480, 640, 3), dtype=np.uint8)
-                        sam6d_depth = np.zeros((480, 640), dtype=np.float32)
-                        
-                        # 패딩된 이미지의 중앙에 원본 이미지 배치
-                        pad_start_x = (640 - crop_width) // 2
-                        pad_start_y = (480 - crop_height) // 2
-                        
-                        sam6d_color[pad_start_y:pad_start_y+crop_height, pad_start_x:pad_start_x+crop_width] = image_rgb[start_y:end_y, start_x:end_x]
-                        sam6d_depth[pad_start_y:pad_start_y+crop_height, pad_start_x:pad_start_x+crop_width] = depth_map[start_y:end_y, start_x:end_x]
+                # 중앙 640x480 영역 크롭
+                if crop_width >= 640 and crop_height >= 480:
+                    # 이미지 크기가 충분히 큰 경우 - 중앙 크롭
+                    sam6d_color = image_rgb[start_y:start_y+480, start_x:start_x+640].copy()
+                    sam6d_depth = depth_map[start_y:start_y+480, start_x:start_x+640].copy()
                 else:
-                    sam6d_color = image_rgb
-                    sam6d_depth = depth_map
+                    # 이미지 크기가 작은 경우 - 패딩 처리
+                    sam6d_color = np.zeros((480, 640, 3), dtype=np.uint8)
+                    sam6d_depth = np.zeros((480, 640), dtype=np.float32)
+                    
+                    # 패딩된 이미지의 중앙에 원본 이미지 배치
+                    pad_start_x = (640 - crop_width) // 2
+                    pad_start_y = (480 - crop_height) // 2
+                    
+                    sam6d_color[pad_start_y:pad_start_y+crop_height, pad_start_x:pad_start_x+crop_width] = image_rgb[start_y:end_y, start_x:end_x].copy()
+                    sam6d_depth[pad_start_y:pad_start_y+crop_height, pad_start_x:pad_start_x+crop_width] = depth_map[start_y:end_y, start_x:end_x].copy()
                 
                 # Depth 맵의 NaN/Inf 값 처리 (0으로 대체)
                 sam6d_depth = np.nan_to_num(sam6d_depth, nan=0.0, posinf=0.0, neginf=0.0)
@@ -183,7 +174,7 @@ def main(args):
                     display_image = np.hstack((sam6d_color, depth_display))
                     
                     # 설명 텍스트 추가
-                    cv2.putText(display_image, f"ZED: {img_width}x{img_height} → SAM-6D: 640x480 (크롭)", (10, 30), 
+                    cv2.putText(display_image, f"ZED: {img_width}x{img_height} → SAM-6D: 640x480 (중앙 크롭)", (10, 30), 
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
     
                     # 이미지 보여주기
