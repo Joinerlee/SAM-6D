@@ -14,7 +14,9 @@ def main(args):
     init_params = sl.InitParameters()
     init_params.depth_mode = sl.DEPTH_MODE.ULTRA  # Depth 모드 설정
     init_params.coordinate_units = sl.UNIT.MILLIMETER  # SAM-6D를 위해 MILLIMETER 사용
-    init_params.camera_resolution = sl.RESOLUTION.HD720  # 해상도 설정 (1280x720)
+    
+    # SAM-6D 대상 해상도로 직접 설정 (640x480)
+    init_params.camera_resolution = sl.RESOLUTION.VGA  # VGA는 640x480 해상도
     init_params.camera_fps = 30  # 프레임 속도 설정
 
     # 카메라 열기
@@ -39,26 +41,10 @@ def main(args):
     intrinsics_dict = {"cam_K": cam_k}
     print(f"카메라 내부 파라미터 (fx, fy, cx, cy): {calibration_params.fx}, {calibration_params.fy}, {calibration_params.cx}, {calibration_params.cy}")
     
-    # 원본 해상도 정보
+    # 해상도 정보
     img_width = zed.get_camera_information().camera_configuration.resolution.width
     img_height = zed.get_camera_information().camera_configuration.resolution.height
-    print(f"원본 해상도: {img_width}x{img_height}")
-    
-    # SAM-6D 대상 해상도
-    target_width, target_height = 640, 480
-    print(f"변환 대상 해상도: {target_width}x{target_height}")
-
-    # 리사이징 비율 계산
-    width_ratio = target_width / img_width
-    height_ratio = target_height / img_height
-    
-    # 카메라 내부 파라미터 조정
-    target_cam_k = [
-        cam_k[0] * width_ratio, cam_k[1], cam_k[2] * width_ratio,
-        cam_k[3], cam_k[4] * height_ratio, cam_k[5] * height_ratio,
-        cam_k[6], cam_k[7], cam_k[8]
-    ]
-    target_intrinsics_dict = {"cam_K": target_cam_k}
+    print(f"카메라 해상도: {img_width}x{img_height}")
     
     print("\n's' 키를 눌러 데이터를 저장하고, 'q' 또는 ESC 키를 눌러 종료하세요.")
 
@@ -82,39 +68,19 @@ def main(args):
                 depth_map[np.isnan(depth_map)] = 0
                 depth_map[np.isinf(depth_map)] = 0
                 
-                # 원본 이미지 표시용 리사이즈 (화면에 맞게)
-                display_size = (640, 360)  # 16:9 비율 유지
-                color_display = cv2.resize(color_image_bgr, display_size)
-                
                 # 표시용 Depth 이미지 생성
                 depth_display = cv2.normalize(depth_map, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
                 depth_colormap = cv2.applyColorMap(depth_display, cv2.COLORMAP_JET)
-                depth_display = cv2.resize(depth_colormap, display_size)
                 
-                # SAM-6D 용으로 변환된 이미지 미리보기 (640x480으로 리사이즈)
-                resized_color = cv2.resize(color_image_bgr, (target_width, target_height))
-                resized_depth = cv2.resize(depth_map, (target_width, target_height))
-                
-                # 변환된 리사이즈 이미지 표시용 처리
-                resized_depth_display = cv2.normalize(resized_depth, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
-                resized_depth_colormap = cv2.applyColorMap(resized_depth_display, cv2.COLORMAP_JET)
-                
-                # 이미지 두 줄로 표시 (원본 위, 변환 아래)
-                top_row = np.hstack((color_display, depth_display))
-                bottom_row = np.hstack((
-                    cv2.resize(resized_color, display_size),
-                    cv2.resize(resized_depth_colormap, display_size)
-                ))
-                display_image = np.vstack((top_row, bottom_row))
+                # 원본 이미지와 Depth 맵을 가로로 합치기
+                display_image = np.hstack((color_image_bgr, depth_colormap))
                 
                 # 설명 텍스트 추가
-                cv2.putText(display_image, "Original (1280x720)", (10, 30), 
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
-                cv2.putText(display_image, "SAM-6D (640x480)", (10, 390), 
+                cv2.putText(display_image, f"SAM-6D 해상도 ({img_width}x{img_height})", (10, 30), 
                             cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
 
                 # 이미지 보여주기
-                cv2.imshow("ZED 카메라 | 원본(위) | SAM-6D용 변환(아래)", display_image)
+                cv2.imshow("ZED 카메라 | SAM-6D용 캡처", display_image)
 
                 # --- 키 처리 ---
                 key = cv2.waitKey(1) & 0xFF
@@ -136,27 +102,13 @@ def main(args):
                     depth_path = os.path.join(output_dir, "depth.png")
                     camera_path = os.path.join(output_dir, "camera.json")
                     
-                    # 원본 이미지 저장 (원하는 경우)
-                    if args.save_original:
-                        orig_dir = os.path.join(output_dir, "original")
-                        os.makedirs(orig_dir, exist_ok=True)
-                        orig_rgb_path = os.path.join(orig_dir, "rgb_original.png")
-                        orig_depth_path = os.path.join(orig_dir, "depth_original.png")
-                        orig_camera_path = os.path.join(orig_dir, "camera_original.json")
-                        
-                        cv2.imwrite(orig_rgb_path, color_image_bgr)
-                        cv2.imwrite(orig_depth_path, depth_map.astype(np.uint16))
-                        with open(orig_camera_path, "w") as f:
-                            json.dump(intrinsics_dict, f, indent=4)
-                        print(f"원본 이미지 저장 완료: {orig_dir}")
-
-                    # SAM-6D용 변환 이미지 저장 (640x480)
-                    cv2.imwrite(rgb_path, resized_color)
-                    cv2.imwrite(depth_path, resized_depth.astype(np.uint16))
+                    # SAM-6D용 데이터 저장
+                    cv2.imwrite(rgb_path, color_image_bgr)
+                    cv2.imwrite(depth_path, depth_map.astype(np.uint16))
                     with open(camera_path, "w") as f:
-                        json.dump(target_intrinsics_dict, f, indent=4)
+                        json.dump(intrinsics_dict, f, indent=4)
                     
-                    print(f"SAM-6D용 변환 데이터 저장 완료: {output_dir}")
+                    print(f"SAM-6D용 데이터 저장 완료: {output_dir}")
                     
                     # CAD 모델 확인 메시지
                     if args.cad_path:
@@ -182,7 +134,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ZED 카메라를 사용하여 SAM-6D용 데이터 캡처")
     parser.add_argument("--output_dir", type=str, help="출력 디렉토리 경로")
     parser.add_argument("--cad_path", type=str, help="CAD 모델 경로(.ply 파일)")
-    parser.add_argument("--save_original", action="store_true", help="원본 해상도 이미지도 저장")
     args = parser.parse_args()
     
     main(args) 
