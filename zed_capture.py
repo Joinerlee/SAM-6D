@@ -119,11 +119,19 @@ def main(args):
                     print(f"이미지 검색 실패: {retrieve_status}, 다시 시도합니다...")
                     continue
                 
-                # NumPy 배열로 이미지 데이터 복사
-                image_rgb = image_zed.get_data()
-                # RGBA 이미지를 BGR로 변환 (채널 수 확인)
-                if image_rgb.shape[2] == 4:  # 4채널(RGBA) 이미지인 경우
-                    image_rgb = cv2.cvtColor(image_rgb, cv2.COLOR_RGBA2BGR)
+                # NumPy 배열로 이미지 데이터 복사 (메모리 오류 방지)
+                image_ocv = sl.Mat()
+                image_zed.copy_to(image_ocv)  # 메모리 복사로 안정성 향상
+                if image_ocv.is_init():
+                    image_rgb = image_ocv.get_data()
+                    if image_rgb.shape[2] == 4:  # RGBA 이미지인 경우
+                        image_rgb = cv2.cvtColor(image_rgb, cv2.COLOR_RGBA2BGR)
+                    else:
+                        print("유효하지 않은 이미지 데이터")
+                        continue
+                else:
+                    print("유효하지 않은 이미지 데이터")
+                    continue
                 
                 # 2. 깊이 맵 가져오기 (기본 해상도로)
                 retrieve_status = zed.retrieve_measure(depth_zed, sl.MEASURE.DEPTH)
@@ -131,16 +139,27 @@ def main(args):
                     print(f"깊이 맵 검색 실패: {retrieve_status}, 다시 시도합니다...")
                     continue
                 
-                # NumPy 배열로 깊이 데이터 복사
-                depth_map = depth_zed.get_data()
-                # 깊이 맵이 유효한지 확인하고 float32로 변환
-                if depth_map is not None and depth_map.size > 0:
-                    depth_map = depth_map.astype(np.float32)
-                    # NaN 값과 무한대 값 처리
-                    depth_map = np.nan_to_num(depth_map, nan=0.0, posinf=0.0, neginf=0.0)
+                # NumPy 배열로 깊이 데이터 복사 (메모리 오류 방지)
+                depth_ocv = sl.Mat()
+                depth_zed.copy_to(depth_ocv)  # 메모리 복사로 안정성 향상
+                if depth_ocv.is_init():
+                    depth_map = depth_ocv.get_data()
+                    depth_map = depth_map.astype(np.float32)  # 명시적 타입 변환
                 else:
-                    print("유효한 깊이 데이터를 가져오지 못했습니다")
+                    print("유효하지 않은 깊이 데이터")
                     continue
+                
+                # 이미지와 깊이 데이터를 가져온 후 디버그 정보 출력
+                if image_rgb is not None:
+                    print(f"이미지: 타입={type(image_rgb)}, 형태={image_rgb.shape}, 데이터타입={image_rgb.dtype}")
+                    if not isinstance(image_rgb, np.ndarray):
+                        print("이미지가 NumPy 배열이 아닙니다!")
+                        continue
+                if depth_map is not None:
+                    print(f"깊이 맵: 타입={type(depth_map)}, 형태={depth_map.shape}, 데이터타입={depth_map.dtype}")
+                    if not isinstance(depth_map, np.ndarray):
+                        print("깊이 맵이 NumPy 배열이 아닙니다!")
+                        continue
                 
                 # 이미지 형태 확인 (디버깅용)
                 if "first_frame" not in locals():
