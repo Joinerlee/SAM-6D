@@ -68,7 +68,7 @@ def main(args):
     print("\n's' 키를 눌러 데이터를 저장하고, 'q' 또는 ESC 키를 눌러 종료하세요.")
 
     # 직접 BGR 이미지를 검색할 수 있도록 사용할 VIEW 타입 설정
-    view_mode = sl.VIEW.LEFT_UNRECTIFIED   # 왼쪽 카메라, 미보정 이미지
+    view_mode = sl.VIEW.LEFT  # 일반 왼쪽 카메라 뷰
     depth_mode = sl.MEASURE.DEPTH
     
     # BGR 이미지와 Depth 이미지를 위한 NumPy 배열 준비
@@ -81,7 +81,7 @@ def main(args):
             if zed.grab(runtime_parameters) == sl.ERROR_CODE.SUCCESS:
                 # 이미지 및 Depth 데이터 검색 - 에러 처리와 함께
                 try:
-                    # 1. BGR 이미지 직접 검색 (RGBA 대신)
+                    # 1. 이미지 검색
                     err = zed.retrieve_image(image_zed, view_mode)
                     if err != sl.ERROR_CODE.SUCCESS:
                         print(f"이미지 검색 실패: {err}")
@@ -94,32 +94,55 @@ def main(args):
                         continue
                     
                     # 3. NumPy 배열로 변환
-                    color_image_bgr = image_zed.get_data()
-                    depth_map = depth_zed.get_data()
+                    color_image_rgba = image_zed.get_data()
                     
                     # 4. 배열 유효성 확인
-                    if color_image_bgr is None or depth_map is None:
+                    if color_image_rgba is None or color_image_rgba.size == 0:
                         print("이미지 데이터가 유효하지 않습니다. 다시 시도합니다.")
                         continue
                     
-                    if color_image_bgr.size == 0 or depth_map.size == 0:
-                        print("이미지 데이터가 비어있습니다. 다시 시도합니다.")
+                    # 5. RGBA에서 BGR로 변환 (이제 데이터가 올바르게 로드됨)
+                    color_image_bgr = cv2.cvtColor(color_image_rgba, cv2.COLOR_RGBA2BGR)
+                    
+                    # 6. 깊이 맵 가져오기 및 유효성 확인
+                    # 깊이 맵을 NumPy 배열로 명시적 변환하여 문제 해결
+                    depth_data = depth_zed.get_data()
+                    if depth_data is None or depth_data.size == 0:
+                        print("깊이 데이터가 유효하지 않습니다. 다시 시도합니다.")
                         continue
-                        
-                    # 5. 데이터 형식 확인 (디버깅용)
-                    # print(f"컬러 이미지 형태: {color_image_bgr.shape}, 타입: {color_image_bgr.dtype}")
-                    # print(f"깊이 맵 형태: {depth_map.shape}, 타입: {depth_map.dtype}")
+                    
+                    # 명시적으로 깊이 맵을 float32 NumPy 배열로 복사
+                    depth_map = np.array(depth_data, dtype=np.float32)
+                    
+                    # 디버그 정보 출력
+                    print(f"컬러 이미지 형태: {color_image_bgr.shape}, 타입: {color_image_bgr.dtype}")
+                    print(f"깊이 맵 형태: {depth_map.shape}, 타입: {depth_map.dtype}")
                     
                 except Exception as e:
                     print(f"데이터 검색/변환 오류: {str(e)}. 다시 시도합니다...")
+                    # 스택 트레이스 출력
+                    import traceback
+                    traceback.print_exc()
                     continue
                 
                 # Depth 맵의 NaN/Inf 값 처리 (0으로 대체)
                 depth_map = np.nan_to_num(depth_map, nan=0.0, posinf=0.0, neginf=0.0)
                 
                 # 표시용 Depth 이미지 생성
-                depth_display = cv2.normalize(depth_map, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
-                depth_colormap = cv2.applyColorMap(depth_display, cv2.COLORMAP_JET)
+                try:
+                    # 최소/최대값 확인
+                    min_val = np.min(depth_map)
+                    max_val = np.max(depth_map)
+                    print(f"깊이 맵 범위: {min_val} ~ {max_val}")
+                    
+                    # 8비트로 정규화
+                    depth_display = cv2.normalize(depth_map, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
+                    depth_colormap = cv2.applyColorMap(depth_display, cv2.COLORMAP_JET)
+                except Exception as e:
+                    print(f"깊이 맵 정규화 오류: {str(e)}")
+                    import traceback
+                    traceback.print_exc()
+                    continue
                 
                 # SAM-6D 필요 해상도로 리사이징 (필요한 경우)
                 if img_width != 640 or img_height != 480:
