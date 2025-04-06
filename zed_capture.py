@@ -27,8 +27,8 @@ def main(args):
         exit()
 
     # 이미지와 Depth 데이터를 담을 sl.Mat 객체 생성
-    image_sl = sl.Mat()
-    depth_sl = sl.Mat()
+    image_zed = sl.Mat()
+    depth_zed = sl.Mat()
     runtime_parameters = sl.RuntimeParameters()
 
     # 카메라 캘리브레이션 파라미터 가져오기 (왼쪽 카메라 기준)
@@ -67,44 +67,53 @@ def main(args):
     
     print("\n's' 키를 눌러 데이터를 저장하고, 'q' 또는 ESC 키를 눌러 종료하세요.")
 
+    # 직접 BGR 이미지를 검색할 수 있도록 사용할 VIEW 타입 설정
+    view_mode = sl.VIEW.LEFT_UNRECTIFIED   # 왼쪽 카메라, 미보정 이미지
+    depth_mode = sl.MEASURE.DEPTH
+    
+    # BGR 이미지와 Depth 이미지를 위한 NumPy 배열 준비
+    color_image_bgr = None
+    depth_map = None
+    
     try:
         while True:
             # 새로운 프레임 잡기
             if zed.grab(runtime_parameters) == sl.ERROR_CODE.SUCCESS:
-                # 왼쪽 컬러 이미지 검색
-                status = zed.retrieve_image(image_sl, sl.VIEW.LEFT)
-                if status != sl.ERROR_CODE.SUCCESS:
-                    print("이미지를 가져오는데 실패했습니다. 다시 시도합니다...")
-                    continue
-                    
-                # Depth 맵 검색
-                status = zed.retrieve_measure(depth_sl, sl.MEASURE.DEPTH)
-                if status != sl.ERROR_CODE.SUCCESS:
-                    print("Depth 맵을 가져오는데 실패했습니다. 다시 시도합니다...")
-                    continue
-
-                # NumPy 배열로 변환 (안전하게 처리)
+                # 이미지 및 Depth 데이터 검색 - 에러 처리와 함께
                 try:
-                    color_image_rgba = image_sl.get_data()
-                    if color_image_rgba is None or color_image_rgba.size == 0:
-                        print("이미지 데이터가 비어 있습니다. 다시 시도합니다...")
+                    # 1. BGR 이미지 직접 검색 (RGBA 대신)
+                    err = zed.retrieve_image(image_zed, view_mode)
+                    if err != sl.ERROR_CODE.SUCCESS:
+                        print(f"이미지 검색 실패: {err}")
+                        continue
+                    
+                    # 2. Depth 맵 검색
+                    err = zed.retrieve_measure(depth_zed, depth_mode)
+                    if err != sl.ERROR_CODE.SUCCESS:
+                        print(f"Depth 맵 검색 실패: {err}")
+                        continue
+                    
+                    # 3. NumPy 배열로 변환
+                    color_image_bgr = image_zed.get_data()
+                    depth_map = depth_zed.get_data()
+                    
+                    # 4. 배열 유효성 확인
+                    if color_image_bgr is None or depth_map is None:
+                        print("이미지 데이터가 유효하지 않습니다. 다시 시도합니다.")
+                        continue
+                    
+                    if color_image_bgr.size == 0 or depth_map.size == 0:
+                        print("이미지 데이터가 비어있습니다. 다시 시도합니다.")
                         continue
                         
-                    depth_map = depth_sl.get_data()
-                    if depth_map is None or depth_map.size == 0:
-                        print("Depth 데이터가 비어 있습니다. 다시 시도합니다...")
-                        continue
+                    # 5. 데이터 형식 확인 (디버깅용)
+                    # print(f"컬러 이미지 형태: {color_image_bgr.shape}, 타입: {color_image_bgr.dtype}")
+                    # print(f"깊이 맵 형태: {depth_map.shape}, 타입: {depth_map.dtype}")
+                    
                 except Exception as e:
-                    print(f"데이터 변환 오류: {e}. 다시 시도합니다...")
+                    print(f"데이터 검색/변환 오류: {str(e)}. 다시 시도합니다...")
                     continue
-
-                # RGBA를 BGR로 변환 (OpenCV 형식)
-                try:
-                    color_image_bgr = cv2.cvtColor(color_image_rgba, cv2.COLOR_RGBA2BGR)
-                except Exception as e:
-                    print(f"색상 변환 오류: {e}. 다시 시도합니다...")
-                    continue
-
+                
                 # Depth 맵의 NaN/Inf 값 처리 (0으로 대체)
                 depth_map = np.nan_to_num(depth_map, nan=0.0, posinf=0.0, neginf=0.0)
                 
