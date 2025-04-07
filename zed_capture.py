@@ -349,48 +349,41 @@ def main(args):
                     print(f"원본 깊이 맵 형태: {depth_map.shape}, 타입: {depth_map.dtype}")
                     first_frame = False
                 
-                # 이미지 표시 처리 - 안전성 강화
+                # 이미지 표시 처리 - 최종 안전성 강화
                 try:
-                    # 유효한 이미지인지 엄격하게 확인
+                    # 1. image_rgb 유효성 검사 (초기)
                     if image_rgb is None or not isinstance(image_rgb, np.ndarray) or image_rgb.size == 0:
-                        print("유효하지 않은 이미지입니다")
+                        print("[표시 오류] 초기 image_rgb가 유효하지 않습니다.")
                         continue
                     
-                    # 타입 검사 추가
-                    print(f"이미지 타입: {type(image_rgb)}, 형태: {image_rgb.shape}, 데이터타입: {image_rgb.dtype}")
-                    
-                    # 이미지가 numpy 배열인지 확인
-                    if not isinstance(image_rgb, np.ndarray):
-                        print("이미지가 numpy 배열이 아닙니다.")
-                        continue
-                    
-                    # RGB 채널 확인 (3채널인지)
+                    # 2. 필수 조건 확인 (형태, 채널, 타입)
                     if len(image_rgb.shape) != 3 or image_rgb.shape[2] != 3:
-                        print(f"3채널 RGB 이미지가 아닙니다: {image_rgb.shape}")
+                        print(f"[표시 오류] 3채널 이미지가 아닙니다: {image_rgb.shape}")
                         continue
-                        
-                    # 데이터 타입 확인 (uint8인지)
                     if image_rgb.dtype != np.uint8:
-                        print(f"이미지 데이터 타입이 uint8이 아닙니다: {image_rgb.dtype}")
-                        # uint8로 변환 시도
+                        print(f"[표시 오류] 이미지 데이터 타입이 uint8이 아닙니다: {image_rgb.dtype}. 변환 시도...")
                         try:
                             image_rgb = image_rgb.astype(np.uint8)
-                            print("이미지를 uint8로 변환했습니다.")
                         except Exception as e:
-                            print(f"이미지 변환 실패: {str(e)}")
+                            print(f"[표시 오류] uint8 변환 실패: {str(e)}")
                             continue
-                    
-                    # 이미지 복사 (무결성 확인)
-                    try:
-                        display_img = np.copy(image_rgb)
-                        print(f"이미지 복사 성공: {display_img.shape}, 타입: {display_img.dtype}")
+
+                    # 3. 메모리 연속성 보장
+                    if not image_rgb.flags['C_CONTIGUOUS']:
+                        print("[표시 정보] 이미지가 메모리에 연속적이지 않아 복사본을 생성합니다.")
+                        image_rgb = np.ascontiguousarray(image_rgb)
                         
-                        # OpenCV가 처리할 수 있는 연속된 메모리인지 확인
-                        if not display_img.flags['C_CONTIGUOUS']:
-                            print("이미지가 메모리에 연속적으로 저장되어 있지 않습니다. 복사본 생성...")
-                            display_img = np.ascontiguousarray(display_img)
-                            
-                        # 이제 안전하게 putText 적용
+                    # 4. 표시용 이미지 복사 (선택 사항이지만, 원본 보호 목적)
+                    # display_img = np.copy(image_rgb) # 복사본 생성 시 여기서 오류 가능성 있음, 직접 image_rgb 사용
+                    display_img = image_rgb # 원본 직접 사용
+
+                    # 5. putText 실행 전 최종 검사
+                    if not isinstance(display_img, np.ndarray) or display_img.dtype != np.uint8 or not display_img.flags['C_CONTIGUOUS']:
+                        print(f"[표시 오류] putText 직전 display_img 검증 실패: 타입={type(display_img)}, dtype={display_img.dtype}, 연속성={display_img.flags['C_CONTIGUOUS']}")
+                        continue
+                        
+                    # 6. 텍스트 추가 시도
+                    try:
                         label = f"ZED {img_width}x{img_height}"
                         font_face = cv2.FONT_HERSHEY_SIMPLEX
                         font_scale = 0.7
@@ -398,18 +391,18 @@ def main(args):
                         thickness = 2
                         cv2.putText(display_img, label, (10, 30), font_face, font_scale, color, thickness)
                         
-                        # 이미지 표시
+                        # 7. 이미지 표시 시도
                         cv2.imshow("ZED Camera", display_img)
-                        cv2.waitKey(1)  # 화면 업데이트를 위해 필요
+                        cv2.waitKey(1)
                         
                     except Exception as e:
                         import traceback
-                        print(f"이미지 표시 오류: {str(e)}")
+                        print(f"[표시 오류] putText 또는 imshow 오류: {str(e)}")
                         print(traceback.format_exc())
                 
                 except Exception as e:
                     import traceback
-                    print(f"디스플레이 처리 오류: {str(e)}")
+                    print(f"[표시 오류] 전체 디스플레이 처리 블록 오류: {str(e)}")
                     print(traceback.format_exc())
 
                 # --- 키 처리 ---
