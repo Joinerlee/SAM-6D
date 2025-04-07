@@ -107,8 +107,9 @@ def main(args):
     try:
         while True:
             # 새로운 프레임 잡기
-            if zed.grab(runtime_parameters) != sl.ERROR_CODE.SUCCESS:
-                print("프레임 획득 실패, 다시 시도합니다...")
+            grab_status = zed.grab(runtime_parameters)
+            if grab_status != sl.ERROR_CODE.SUCCESS:
+                print(f"프레임 획득 실패: {grab_status}. 다시 시도합니다...")
                 time.sleep(0.1)
                 continue
                 
@@ -117,36 +118,117 @@ def main(args):
                 retrieve_status = zed.retrieve_image(image_zed, sl.VIEW.LEFT)
                 if retrieve_status != sl.ERROR_CODE.SUCCESS:
                     print(f"이미지 검색 실패: {retrieve_status}, 다시 시도합니다...")
+                    time.sleep(0.1)
                     continue
+                
+                # 디버깅: 이미지 매트 상태 확인
+                if not image_zed.is_init():
+                    print("오류: 이미지 매트가 초기화되지 않았습니다")
+                    time.sleep(0.1)
+                    continue
+                    
+                # 첫 번째 성공한 프레임에서만 매트 정보 출력
+                if "first_frame_info" not in locals():
+                    print(f"이미지 매트 정보: 너비={image_zed.get_width()}, 높이={image_zed.get_height()}, 채널={image_zed.get_channels()}")
+                    first_frame_info = True
                 
                 # NumPy 배열로 이미지 데이터 복사 (메모리 오류 방지)
                 image_ocv = sl.Mat()
                 image_zed.copy_to(image_ocv)  # 메모리 복사로 안정성 향상
-                if image_ocv.is_init():
-                    image_rgb = image_ocv.get_data()
-                    if image_rgb.shape[2] == 4:  # RGBA 이미지인 경우
-                        image_rgb = cv2.cvtColor(image_rgb, cv2.COLOR_RGBA2BGR)
-                    else:
-                        print("유효하지 않은 이미지 데이터")
-                        continue
-                else:
-                    print("유효하지 않은 이미지 데이터")
+                image_rgb = None  # 명시적으로 초기화
+                
+                if not image_ocv.is_init():
+                    print("오류: 이미지 복사 실패")
+                    time.sleep(0.1)
                     continue
+                    
+                # 이미지 데이터 가져오기 시도
+                try:
+                    image_rgb = image_ocv.get_data()
+                except Exception as e:
+                    print(f"이미지 데이터 추출 오류: {str(e)}")
+                    time.sleep(0.1)
+                    continue
+                    
+                # 데이터가 유효한지 확인
+                if image_rgb is None:
+                    print("오류: 이미지 데이터가 None입니다")
+                    time.sleep(0.1)
+                    continue
+                    
+                if not isinstance(image_rgb, np.ndarray):
+                    print(f"오류: 이미지 데이터가 NumPy 배열이 아닙니다 (타입: {type(image_rgb)})")
+                    time.sleep(0.1)
+                    continue
+                    
+                # 채널 수가 올바른지 확인
+                if len(image_rgb.shape) != 3:
+                    print(f"오류: 유효하지 않은 이미지 형태: {image_rgb.shape}")
+                    time.sleep(0.1)
+                    continue
+                    
+                # RGBA 이미지인 경우 BGR로 변환
+                if image_rgb.shape[2] == 4:
+                    try:
+                        image_rgb = cv2.cvtColor(image_rgb, cv2.COLOR_RGBA2BGR)
+                    except Exception as e:
+                        print(f"색상 변환 오류: {str(e)}")
+                        time.sleep(0.1)
+                        continue
                 
                 # 2. 깊이 맵 가져오기 (기본 해상도로)
                 retrieve_status = zed.retrieve_measure(depth_zed, sl.MEASURE.DEPTH)
                 if retrieve_status != sl.ERROR_CODE.SUCCESS:
                     print(f"깊이 맵 검색 실패: {retrieve_status}, 다시 시도합니다...")
+                    time.sleep(0.1)
                     continue
+                
+                # 디버깅: 깊이 매트 상태 확인
+                if not depth_zed.is_init():
+                    print("오류: 깊이 매트가 초기화되지 않았습니다")
+                    time.sleep(0.1)
+                    continue
+                    
+                # 첫 번째 성공한 프레임에서만 매트 정보 출력
+                if "first_depth_info" not in locals():
+                    print(f"깊이 매트 정보: 너비={depth_zed.get_width()}, 높이={depth_zed.get_height()}, 채널={depth_zed.get_channels()}")
+                    first_depth_info = True
                 
                 # NumPy 배열로 깊이 데이터 복사 (메모리 오류 방지)
                 depth_ocv = sl.Mat()
                 depth_zed.copy_to(depth_ocv)  # 메모리 복사로 안정성 향상
-                if depth_ocv.is_init():
+                depth_map = None  # 명시적으로 초기화
+                
+                if not depth_ocv.is_init():
+                    print("오류: 깊이 맵 복사 실패")
+                    time.sleep(0.1)
+                    continue
+                    
+                # 깊이 데이터 가져오기 시도
+                try:
                     depth_map = depth_ocv.get_data()
+                except Exception as e:
+                    print(f"깊이 데이터 추출 오류: {str(e)}")
+                    time.sleep(0.1)
+                    continue
+                    
+                # 데이터가 유효한지 확인
+                if depth_map is None:
+                    print("오류: 깊이 데이터가 None입니다")
+                    time.sleep(0.1)
+                    continue
+                    
+                if not isinstance(depth_map, np.ndarray):
+                    print(f"오류: 깊이 데이터가 NumPy 배열이 아닙니다 (타입: {type(depth_map)})")
+                    time.sleep(0.1)
+                    continue
+                    
+                # 깊이 맵 타입 변환
+                try:
                     depth_map = depth_map.astype(np.float32)  # 명시적 타입 변환
-                else:
-                    print("유효하지 않은 깊이 데이터")
+                except Exception as e:
+                    print(f"깊이 맵 타입 변환 오류: {str(e)}")
+                    time.sleep(0.1)
                     continue
                 
                 # 이미지와 깊이 데이터를 가져온 후 디버그 정보 출력
