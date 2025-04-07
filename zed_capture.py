@@ -373,33 +373,26 @@ def main(args):
                         print("[표시 정보] 이미지가 메모리에 연속적이지 않아 복사본을 생성합니다.")
                         image_rgb = np.ascontiguousarray(image_rgb)
                         
-                    # 4. putText를 위한 최종 복사본 생성 및 검증
-                    try:
-                        # 모든 검사를 통과한 image_rgb를 명시적으로 복사
-                        display_img = np.copy(image_rgb) 
+                    # 4. putText 실행 전 최종 검사 (image_rgb 직접 검사)
+                    if not isinstance(image_rgb, np.ndarray) or image_rgb.dtype != np.uint8 or not image_rgb.flags['C_CONTIGUOUS']:
+                        print(f"[표시 오류] putText 직전 image_rgb 검증 실패: 타입={type(image_rgb)}, dtype={image_rgb.dtype}, 연속성={image_rgb.flags['C_CONTIGUOUS']}")
+                        continue # 이 프레임은 건너뜀
                         
-                        # 복사본의 유효성 재확인 (매우 중요)
-                        if not isinstance(display_img, np.ndarray) or display_img.dtype != np.uint8 or not display_img.flags['C_CONTIGUOUS']:
-                            print(f"[표시 오류] 복사 후 display_img 검증 실패: 타입={type(display_img)}, dtype={display_img.dtype}, 연속성={display_img.flags['C_CONTIGUOUS']}")
-                            continue # 이 프레임은 건너뜀
-                            
-                        print(f"[표시 정보] putText 직전 display_img 상태: 형태={display_img.shape}, 타입={display_img.dtype}, 연속성={display_img.flags['C_CONTIGUOUS']}")
-                        
-                    except Exception as copy_e:
-                        print(f"[표시 오류] 최종 이미지 복사 실패: {str(copy_e)}")
-                        continue # 복사 실패 시 건너뜀
+                    print(f"[표시 정보] putText 직전 image_rgb 상태: 형태={image_rgb.shape}, 타입={image_rgb.dtype}, 연속성={image_rgb.flags['C_CONTIGUOUS']}")
 
-                    # 5. 텍스트 추가 시도 (이제 복사본에 적용)
+                    # 5. 텍스트 추가 시도 (이제 image_rgb 원본에 적용)
                     try:
+                        # 여기서 image_rgb에 직접 텍스트를 그리도록 시도
                         label = f"ZED {img_width}x{img_height}"
                         font_face = cv2.FONT_HERSHEY_SIMPLEX
                         font_scale = 0.7
                         color = (0, 255, 0)  # BGR 형식 (녹색)
                         thickness = 2
-                        cv2.putText(display_img, label, (10, 30), font_face, font_scale, color, thickness)
+                        # putText를 image_rgb에 직접 적용
+                        cv2.putText(image_rgb, label, (10, 30), font_face, font_scale, color, thickness)
                         
-                        # 6. 이미지 표시 시도
-                        cv2.imshow("ZED Camera", display_img)
+                        # 6. 이미지 표시 시도 (수정된 image_rgb 사용)
+                        cv2.imshow("ZED Camera", image_rgb)
                         cv2.waitKey(1)
                         
                     except Exception as e:
