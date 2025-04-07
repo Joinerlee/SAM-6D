@@ -114,6 +114,14 @@ def main(args):
                 continue
                 
             try:
+                # --- 추가: 이미지 데이터 검색 호출 --- 
+                retrieve_status_img = zed.retrieve_image(image_zed, sl.VIEW.LEFT, sl.MEM.CPU)
+                if retrieve_status_img != sl.ERROR_CODE.SUCCESS:
+                    print(f"[이미지 오류] 이미지 검색 실패: {retrieve_status_img}")
+                    time.sleep(0.1)
+                    continue
+                # --- 추가 끝 ---
+                
                 # 이미지 데이터 가져오기 - get_data() 사용 및 철저한 검증
                 try:
                     if not image_zed.is_init():
@@ -161,6 +169,14 @@ def main(args):
                     print(f"[이미지 오류] 이미지 처리 중 예외 발생: {str(img_proc_e)}")
                     print(traceback.format_exc())
                     continue
+                
+                # --- 추가: 깊이 데이터 검색 호출 --- 
+                retrieve_status_depth = zed.retrieve_measure(depth_zed, sl.MEASURE.DEPTH, sl.MEM.CPU)
+                if retrieve_status_depth != sl.ERROR_CODE.SUCCESS:
+                    print(f"[깊이 오류] 깊이 맵 검색 실패: {retrieve_status_depth}")
+                    time.sleep(0.1)
+                    continue
+                # --- 추가 끝 ---
                 
                 # 깊이 데이터 가져오기 - get_data() 사용 및 철저한 검증
                 try:
