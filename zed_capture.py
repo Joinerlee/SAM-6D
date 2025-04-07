@@ -132,49 +132,42 @@ def main(args):
                     print(f"이미지 매트 정보: 너비={image_zed.get_width()}, 높이={image_zed.get_height()}, 채널={image_zed.get_channels()}")
                     first_frame_info = True
                 
-                # NumPy 배열로 이미지 데이터 복사 (메모리 오류 방지)
-                image_ocv = sl.Mat()
-                image_zed.copy_to(image_ocv)  # 메모리 복사로 안정성 향상
-                image_rgb = None  # 명시적으로 초기화
-                
-                if not image_ocv.is_init():
-                    print("오류: 이미지 복사 실패")
-                    time.sleep(0.1)
-                    continue
-                    
-                # 이미지 데이터 가져오기 시도
+                # 이미지 데이터 가져오기 - 직접 numpy 배열로 변환하는 방식으로 수정
                 try:
-                    image_rgb = image_ocv.get_data()
-                except Exception as e:
-                    print(f"이미지 데이터 추출 오류: {str(e)}")
-                    time.sleep(0.1)
-                    continue
+                    # numpy 배열로 직접 변환하여 복사
+                    image_rgb_np = image_zed.get_data()
                     
-                # 데이터가 유효한지 확인
-                if image_rgb is None:
-                    print("오류: 이미지 데이터가 None입니다")
-                    time.sleep(0.1)
-                    continue
-                    
-                if not isinstance(image_rgb, np.ndarray):
-                    print(f"오류: 이미지 데이터가 NumPy 배열이 아닙니다 (타입: {type(image_rgb)})")
-                    time.sleep(0.1)
-                    continue
-                    
-                # 채널 수가 올바른지 확인
-                if len(image_rgb.shape) != 3:
-                    print(f"오류: 유효하지 않은 이미지 형태: {image_rgb.shape}")
-                    time.sleep(0.1)
-                    continue
-                    
-                # RGBA 이미지인 경우 BGR로 변환
-                if image_rgb.shape[2] == 4:
-                    try:
-                        image_rgb = cv2.cvtColor(image_rgb, cv2.COLOR_RGBA2BGR)
-                    except Exception as e:
-                        print(f"색상 변환 오류: {str(e)}")
+                    # 데이터가 유효한지 확인
+                    if image_rgb_np is None:
+                        print("오류: 이미지 데이터가 None입니다")
                         time.sleep(0.1)
                         continue
+                    
+                    # NumPy 배열 확인
+                    if not isinstance(image_rgb_np, np.ndarray):
+                        print(f"오류: 이미지 데이터가 NumPy 배열이 아닙니다 (타입: {type(image_rgb_np)})")
+                        time.sleep(0.1)
+                        continue
+                    
+                    # 형태 확인
+                    if len(image_rgb_np.shape) != 3:
+                        print(f"오류: 유효하지 않은 이미지 형태: {image_rgb_np.shape}")
+                        time.sleep(0.1)
+                        continue
+                    
+                    # RGBA 이미지인 경우만 BGR로 변환
+                    image_rgb = image_rgb_np.copy()  # 안전한 복사본 생성
+                    if image_rgb.shape[2] == 4:
+                        try:
+                            image_rgb = cv2.cvtColor(image_rgb, cv2.COLOR_RGBA2BGR)
+                        except Exception as e:
+                            print(f"색상 변환 오류: {str(e)}")
+                            time.sleep(0.1)
+                            continue
+                except Exception as e:
+                    print(f"이미지 데이터 처리 오류: {str(e)}")
+                    time.sleep(0.1)
+                    continue
                 
                 # 2. 깊이 맵 가져오기 (기본 해상도로)
                 retrieve_status = zed.retrieve_measure(depth_zed, sl.MEASURE.DEPTH)
@@ -194,54 +187,44 @@ def main(args):
                     print(f"깊이 매트 정보: 너비={depth_zed.get_width()}, 높이={depth_zed.get_height()}, 채널={depth_zed.get_channels()}")
                     first_depth_info = True
                 
-                # NumPy 배열로 깊이 데이터 복사 (메모리 오류 방지)
-                depth_ocv = sl.Mat()
-                depth_zed.copy_to(depth_ocv)  # 메모리 복사로 안정성 향상
-                depth_map = None  # 명시적으로 초기화
-                
-                if not depth_ocv.is_init():
-                    print("오류: 깊이 맵 복사 실패")
-                    time.sleep(0.1)
-                    continue
-                    
-                # 깊이 데이터 가져오기 시도
+                # 깊이 데이터 가져오기 - 직접 numpy 배열로 변환하는 방식으로 수정
                 try:
-                    depth_map = depth_ocv.get_data()
+                    # numpy 배열로 직접 변환하여 복사
+                    depth_map_np = depth_zed.get_data()
+                    
+                    # 데이터가 유효한지 확인
+                    if depth_map_np is None:
+                        print("오류: 깊이 데이터가 None입니다")
+                        time.sleep(0.1)
+                        continue
+                    
+                    # NumPy 배열 확인
+                    if not isinstance(depth_map_np, np.ndarray):
+                        print(f"오류: 깊이 데이터가 NumPy 배열이 아닙니다 (타입: {type(depth_map_np)})")
+                        time.sleep(0.1)
+                        continue
+                    
+                    # 깊이 맵 타입 변환
+                    try:
+                        depth_map = depth_map_np.copy().astype(np.float32)  # 복사 및 타입 변환
+                    except Exception as e:
+                        print(f"깊이 맵 타입 변환 오류: {str(e)}")
+                        time.sleep(0.1)
+                        continue
                 except Exception as e:
-                    print(f"깊이 데이터 추출 오류: {str(e)}")
-                    time.sleep(0.1)
-                    continue
-                    
-                # 데이터가 유효한지 확인
-                if depth_map is None:
-                    print("오류: 깊이 데이터가 None입니다")
-                    time.sleep(0.1)
-                    continue
-                    
-                if not isinstance(depth_map, np.ndarray):
-                    print(f"오류: 깊이 데이터가 NumPy 배열이 아닙니다 (타입: {type(depth_map)})")
-                    time.sleep(0.1)
-                    continue
-                    
-                # 깊이 맵 타입 변환
-                try:
-                    depth_map = depth_map.astype(np.float32)  # 명시적 타입 변환
-                except Exception as e:
-                    print(f"깊이 맵 타입 변환 오류: {str(e)}")
+                    print(f"깊이 데이터 처리 오류: {str(e)}")
                     time.sleep(0.1)
                     continue
                 
                 # 이미지와 깊이 데이터를 가져온 후 디버그 정보 출력
-                if image_rgb is not None:
-                    print(f"이미지: 타입={type(image_rgb)}, 형태={image_rgb.shape}, 데이터타입={image_rgb.dtype}")
-                    if not isinstance(image_rgb, np.ndarray):
-                        print("이미지가 NumPy 배열이 아닙니다!")
-                        continue
-                if depth_map is not None:
-                    print(f"깊이 맵: 타입={type(depth_map)}, 형태={depth_map.shape}, 데이터타입={depth_map.dtype}")
-                    if not isinstance(depth_map, np.ndarray):
-                        print("깊이 맵이 NumPy 배열이 아닙니다!")
-                        continue
+                if "first_debug_info" not in locals():
+                    if image_rgb is not None:
+                        print(f"이미지: 타입={type(image_rgb)}, 형태={image_rgb.shape}, 데이터타입={image_rgb.dtype}")
+                    if depth_map is not None:
+                        print(f"깊이 맵: 타입={type(depth_map)}, 형태={depth_map.shape}, 데이터타입={depth_map.dtype}")
+                    if image_rgb is not None and depth_map is not None:
+                        print(f"첫 번째 프레임 처리 성공!")
+                        first_debug_info = True
                 
                 # 이미지 형태 확인 (디버깅용)
                 if "first_frame" not in locals():
@@ -340,7 +323,9 @@ def main(args):
                     print(f"export OUTPUT_DIR={os.path.abspath(output_dir)}/results")
                 
             except Exception as e:
+                import traceback
                 print(f"처리 오류: {str(e)}")
+                print(f"오류 상세정보: {traceback.format_exc()}")
                 time.sleep(0.1)
                 continue
 
