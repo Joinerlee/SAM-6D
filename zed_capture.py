@@ -150,33 +150,41 @@ def main(args):
                             print(f"[이미지 오류] uint8 변환 실패: {str(e)}")
                             continue
                             
-                    # --- 수정: 명시적 복사본 생성 --- 
+                    # --- 수정: cvtColor 대신 슬라이싱 및 채널 재배열 사용 --- 
                     try:
-                        # 완전히 새로운 배열 생성
-                        image_rgba_copy = np.empty_like(image_rgba)
-                        # 데이터 복사
-                        np.copyto(image_rgba_copy, image_rgba)
-                        print("[이미지 정보] get_data() 결과를 새 배열로 복사 완료.")
-                    except Exception as copy_e:
-                        print(f"[이미지 오류] NumPy 배열 복사 실패: {str(copy_e)}")
+                        # 4. RGBA에서 BGR 직접 추출
+                        # 메모리 연속성 보장 (슬라이싱 전에 수행)
+                        if not image_rgba.flags['C_CONTIGUOUS']:
+                             print("[이미지 정보] 슬라이싱 전 메모리가 연속적이지 않아 복사본 생성.")
+                             image_rgba = np.ascontiguousarray(image_rgba)
+                             
+                        # BGR 채널 직접 선택 및 순서 변경
+                        # image_rgba[:, :, :3] -> RGB 순서
+                        # [:, :, ::-1] -> 채널 순서 뒤집기 (RGB -> BGR)
+                        # OpenCV는 BGR 순서를 사용하므로 최종적으로 BGR이 됨
+                        # image_rgb = image_rgba[:, :, :3][:, :, ::-1]
+                        # 위 방식보다 안전한 방식: 채널 분리 후 병합
+                        r_channel = image_rgba[:, :, 0].copy()
+                        g_channel = image_rgba[:, :, 1].copy()
+                        b_channel = image_rgba[:, :, 2].copy()
+                        # OpenCV의 BGR 순서에 맞게 병합
+                        image_rgb = cv2.merge((b_channel, g_channel, r_channel))
+                        
+                        print("[이미지 정보] RGBA->BGR 변환 성공 (슬라이싱/병합 사용).")
+                        
+                    except Exception as slice_e:
+                        import traceback
+                        print(f"[이미지 오류] 채널 슬라이싱/병합 실패: {str(slice_e)}")
+                        print(traceback.format_exc())
                         continue
                     # --- 수정 끝 ---
-                            
-                    # 4. RGBA to BGR 변환 (복사본 사용)
-                    try:
-                        # 복사된 배열을 사용하여 변환
-                        image_rgb = cv2.cvtColor(image_rgba_copy, cv2.COLOR_RGBA2BGR)
-                        print("[이미지 정보] RGBA->BGR 변환 성공 (복사본 사용).")
-                    except Exception as cvt_e:
-                        print(f"[이미지 오류] RGBA->BGR 변환 실패: {str(cvt_e)}")
-                        continue
 
-                    # 5. 메모리 연속성 보장 (변환 후에도 확인)
+                    # 5. 메모리 연속성 보장 (변환 후에도 확인 - cvtColor를 안 썼으므로 필요 없을 수 있으나 안전하게 유지)
                     if not image_rgb.flags['C_CONTIGUOUS']:
-                        print("[이미지 정보] BGR 변환 후 메모리가 연속적이지 않아 복사본 생성.")
+                        print("[이미지 정보] BGR 생성 후 메모리가 연속적이지 않아 복사본 생성.")
                         image_rgb = np.ascontiguousarray(image_rgb)
                     
-                    print("[이미지 정보] 최종 image_rgb 상태: 형태={image_rgb.shape}, 타입={image_rgb.dtype}, 연속성={image_rgb.flags['C_CONTIGUOUS']}")
+                    print(f"[이미지 정보] 최종 image_rgb 상태: 형태={image_rgb.shape}, 타입={image_rgb.dtype}, 연속성={image_rgb.flags['C_CONTIGUOUS']}")
                     
                 except Exception as img_proc_e:
                     import traceback
