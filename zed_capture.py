@@ -162,6 +162,20 @@ def main(args):
                         r_channel = image_rgba[:, :, 0].copy()
                         g_channel = image_rgba[:, :, 1].copy()
                         b_channel = image_rgba[:, :, 2].copy()
+                        
+                        # --- 디버깅 추가: 채널 정보 확인 --- 
+                        print(f"[채널 정보] b: {b_channel.shape}, {b_channel.dtype} | g: {g_channel.shape}, {g_channel.dtype} | r: {r_channel.shape}, {r_channel.dtype}")
+                        
+                        # --- 타입 강제 변환 추가 --- 
+                        try:
+                            b_channel = b_channel.astype(np.uint8)
+                            g_channel = g_channel.astype(np.uint8)
+                            r_channel = r_channel.astype(np.uint8)
+                        except Exception as cast_e:
+                             print(f"[이미지 오류] 채널 타입 변환 실패: {str(cast_e)}")
+                             continue
+                        # --- 추가 끝 ---
+                        
                         # OpenCV의 BGR 순서에 맞게 병합
                         image_rgb = cv2.merge((b_channel, g_channel, r_channel))
                         
