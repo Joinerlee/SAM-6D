@@ -336,86 +336,30 @@ def main(args):
                     print(f"원본 깊이 맵 형태: {depth_map.shape}, 타입: {depth_map.dtype}")
                     first_frame = False
                 
-                # 이미지 및 깊이 맵 표시 준비
+                # 이미지 표시 처리 - 단순화
                 try:
-                    # 먼저 유효한 이미지인지 확인
-                    if not isinstance(image_rgb, np.ndarray) or image_rgb.size == 0:
+                    # 유효한 이미지인지 확인
+                    if not isinstance(image_rgb, np.ndarray):
                         print("유효하지 않은 이미지입니다")
                         continue
-                        
-                    if not isinstance(depth_map, np.ndarray) or depth_map.size == 0:
-                        print("유효하지 않은 깊이 맵입니다")
-                        continue
                     
-                    # 중앙 640x480 영역 추출
-                    h, w = image_rgb.shape[:2]
-                    start_x = max(0, (w - 640) // 2)
-                    start_y = max(0, (h - 480) // 2)
-                    end_x = min(w, start_x + 640)
-                    end_y = min(h, start_y + 480)
-                    
-                    # 안전하게 크롭
-                    crop_w = end_x - start_x
-                    crop_h = end_y - start_y
-                    
-                    # RGB 이미지 크롭
-                    color_img = image_rgb[start_y:end_y, start_x:end_x]
-                    
-                    # 필요하면 크기 조정
-                    if color_img.shape[:2] != (480, 640):
-                        color_disp = np.zeros((480, 640, 3), dtype=np.uint8)
-                        color_disp[:crop_h, :crop_w] = color_img
-                    else:
-                        color_disp = color_img
-                    
-                    # 깊이 맵 크롭 및 시각화
-                    depth_img = depth_map[start_y:end_y, start_x:end_x]
-                    
-                    # 깊이 맵 시각화
+                    # OpenCV 창에 이미지 직접 표시 (크롭하지 않고)
                     try:
-                        # 유효한 깊이 값이 있는지 확인
-                        if np.any(depth_img > 0):
-                            # 범위가 있는 데이터만 표시
-                            depth_norm = cv2.normalize(depth_img, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
-                            depth_disp = cv2.applyColorMap(depth_norm, cv2.COLORMAP_JET)
-                            
-                            # 필요하면 크기 조정
-                            if depth_disp.shape[:2] != (480, 640):
-                                depth_full = np.zeros((480, 640, 3), dtype=np.uint8)
-                                depth_full[:crop_h, :crop_w] = depth_disp
-                                depth_disp = depth_full
-                        else:
-                            # 깊이 데이터가 없으면 검은색 이미지
-                            depth_disp = np.zeros((480, 640, 3), dtype=np.uint8)
-                    except Exception as e:
-                        print(f"깊이 맵 시각화 오류: {str(e)}")
-                        depth_disp = np.zeros((480, 640, 3), dtype=np.uint8)
-                    
-                    # 두 이미지를 가로로 합치기
-                    try:
-                        # 이미지와 깊이 맵 크기 확인
-                        if color_disp.shape[:2] == depth_disp.shape[:2]:
-                            # 두 이미지 합치기
-                            display_image = np.hstack((color_disp, depth_disp))
-                            
-                            # 텍스트 추가
-                            font = cv2.FONT_HERSHEY_SIMPLEX
-                            cv2.putText(display_image, f"ZED: {w}x{h} -> SAM-6D: 640x480", (10, 30), 
-                                      font, 0.7, (0, 255, 0), 2)
-                            
-                            # 표시
-                            cv2.imshow("ZED 카메라 | SAM-6D용 캡처", display_image)
-                            print("화면 표시 성공")
-                        else:
-                            print(f"이미지 크기 불일치: RGB={color_disp.shape}, 깊이={depth_disp.shape}")
-                    except Exception as e:
-                        print(f"이미지 합치기 오류: {str(e)}")
+                        # 이미지만 표시 (깊이 맵 스킵)
+                        display_img = image_rgb.copy()  # 안전한 복사본 생성
                         
+                        # 내부 파라미터 표시
+                        label = f"ZED {img_width}x{img_height}"
+                        cv2.putText(display_img, label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                        
+                        # 이미지 표시 (깊이 맵 없이)
+                        cv2.imshow("ZED Camera", display_img)
+                        
+                    except Exception as e:
+                        print(f"이미지 표시 오류: {str(e)}")
+                
                 except Exception as e:
-                    import traceback
-                    print(f"디스플레이 오류: {str(e)}")
-                    print(f"오류 상세정보: {traceback.format_exc()}")
-                    continue
+                    print(f"디스플레이 처리 오류: {str(e)}")
 
                 # --- 키 처리 ---
                 key = cv2.waitKey(1) & 0xFF
