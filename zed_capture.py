@@ -239,14 +239,11 @@ def main(args):
                          print(f"[표시 오류] imshow 직전 image_rgb 최종 검증 실패")
                          continue
                     
-                    # OpenCV가 사용할 수 있는 더 작은 크기로 이미지 크기 조정 (디버깅용)
-                    display_img = cv2.resize(image_rgb, (640, 360))
-                    
                     # 이미지 타입 출력 (디버깅)
-                    print(f"[디버그] 표시 이미지 타입: {type(display_img)}, 형태: {display_img.shape}, 타입: {display_img.dtype}")
+                    print(f"[디버그] 표시 이미지 타입: {type(image_rgb)}, 형태: {image_rgb.shape}, 타입: {image_rgb.dtype}")
                     
-                    # imshow 시도
-                    cv2.imshow("ZED Camera", display_img)
+                    # imshow 시도 (원본 이미지 사용)
+                    cv2.imshow("ZED Camera", image_rgb) 
                     # 키 처리 (waitKey는 한 번만 호출)
                     key = cv2.waitKey(1) & 0xFF
                         
