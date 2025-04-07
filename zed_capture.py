@@ -150,50 +150,38 @@ def main(args):
                             print(f"[이미지 오류] uint8 변환 실패: {str(e)}")
                             continue
                             
-                    # --- 수정: cv2.split 사용 --- 
-                    # 채널 분리 (ZED는 BGRA 순서일 수 있으므로 확인 필요, 일단 BGRA 가정)
-                    # OpenCV split은 BGR(A) 순서로 반환하는 경우가 많음
-                    # ZED SDK 기본이 BGRA 인 경우가 있음 -> get_data()가 RGBA로 주는지 BGRA로 주는지 확인 필요.
-                    # 일단 RGBA 가정하고 split 후, BGR 순서로 merge
+                    # --- 수정: NumPy 슬라이싱 및 copy() 사용 --- 
+                    # ZED SDK의 get_data(sl.MEM.CPU)는 보통 BGRA 순서로 반환
                     try:
-                        # image_rgba (RGBA 형태 예상)를 각 채널로 분리
-                        # 주의: ZED SDK 버전에 따라 채널 순서가 다를 수 있음 (BGRA vs RGBA)
-                        # OpenCV cvtColor(RGBA2BGR)는 RGBA 입력을 기대함. get_data()도 RGBA일 가능성 높음.
-                        channels = cv2.split(image_rgba)
-                        if len(channels) == 4:
-                            r_channel, g_channel, b_channel, a_channel = channels # RGBA 순서로 가정
-                            print(f"[채널 정보] split 결과: r={r_channel.shape},{r_channel.dtype} g={g_channel.shape},{g_channel.dtype} b={b_channel.shape},{b_channel.dtype}")
-                            # OpenCV BGR 순서로 병합
-                            # --- 추가: Merge 전 메모리 연속성 강제 --- 
-                            b_channel = np.ascontiguousarray(b_channel)
-                            g_channel = np.ascontiguousarray(g_channel)
-                            r_channel = np.ascontiguousarray(r_channel)
-                            # --- 추가 끝 ---
-                            image_rgb = cv2.merge((b_channel, g_channel, r_channel))
-                        elif len(channels) == 3: # 만약 입력이 3채널이면 (RGB? BGR?)
-                            print("[이미지 경고] split 결과 채널이 3개입니다. BGR로 가정하고 진행합니다.")
-                            # 이 경우, image_rgba 자체가 이미 BGR이거나 RGB일 수 있음.
-                            # 일단 BGR로 가정하고 그대로 사용하거나, 필요시 순서 변경.
-                            # 여기서는 ZED가 RGBA/BGRA를 주므로 4채널이어야 함.
-                            # --- 추가: Merge 전 메모리 연속성 강제 (3채널 경우) ---
-                            # 만약 채널 순서가 다르다면 여기서 조정 필요
-                            c1, c2, c3 = channels
-                            c1 = np.ascontiguousarray(c1)
-                            c2 = np.ascontiguousarray(c2)
-                            c3 = np.ascontiguousarray(c3)
-                            # --- 추가 끝 ---
-                            image_rgb = cv2.merge((c1, c2, c3)) # 혹은 순서 맞게 (c3, c2, c1) 등
-                        else:
-                            print(f"[이미지 오류] split 결과 채널 수가 예기치 않습니다: {len(channels)}")
+                        # 1. 메모리 연속성 보장
+                        if not image_rgba.flags['C_CONTIGUOUS']:
+                             print("[이미지 정보] 슬라이싱 전 메모리가 연속적이지 않아 복사본 생성.")
+                             image_rgba = np.ascontiguousarray(image_rgba)
+                             
+                        # 2. BGRA에서 BGR 채널 직접 슬라이싱 및 복사
+                        # .copy()를 사용하여 완전히 새로운 메모리 공간에 BGR 생성
+                        image_rgb = image_rgba[:, :, :3].copy()
+                        
+                        # 3. 결과 확인 (형태, 타입, 연속성)
+                        if image_rgb.shape[2] != 3 or image_rgb.dtype != np.uint8:
+                            print(f"[이미지 오류] 슬라이싱 후 BGR 형식이 아닙니다: {image_rgb.shape}, {image_rgb.dtype}")
                             continue
                             
-                    except cv2.error as split_e:
-                         print(f"[이미지 오류] cv2.split 실패: {split_e}")
-                         continue
+                        # 4. 최종 메모리 연속성 확인 (copy() 했으므로 보통 True)
+                        if not image_rgb.flags['C_CONTIGUOUS']:
+                             print("[이미지 경고] copy() 후에도 메모리가 연속적이지 않습니다.")
+                             # 필요시 다시 한번 보장
+                             # image_rgb = np.ascontiguousarray(image_rgb)
+                             
+                        print(f"[이미지 정보] BGRA->BGR 변환 성공 (NumPy slice + copy). 최종 상태: {image_rgb.shape}, {image_rgb.dtype}, 연속성={image_rgb.flags['C_CONTIGUOUS']}")
+                        
+                    except Exception as slice_copy_e:
+                        import traceback
+                        print(f"[이미지 오류] NumPy 슬라이싱/복사 실패: {str(slice_copy_e)}")
+                        print(traceback.format_exc())
+                        continue
                     # --- 수정 끝 ---
 
-                    print("[이미지 정보] RGBA->BGR 변환 성공 (split/merge 사용).")
-                    
                 except Exception as img_proc_e:
                     import traceback
                     print(f"[이미지 오류] 이미지 처리 중 예외 발생: {str(img_proc_e)}")
