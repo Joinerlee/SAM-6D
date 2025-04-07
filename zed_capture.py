@@ -373,16 +373,23 @@ def main(args):
                         print("[표시 정보] 이미지가 메모리에 연속적이지 않아 복사본을 생성합니다.")
                         image_rgb = np.ascontiguousarray(image_rgb)
                         
-                    # 4. 표시용 이미지 복사 (선택 사항이지만, 원본 보호 목적)
-                    # display_img = np.copy(image_rgb) # 복사본 생성 시 여기서 오류 가능성 있음, 직접 image_rgb 사용
-                    display_img = image_rgb # 원본 직접 사용
-
-                    # 5. putText 실행 전 최종 검사
-                    if not isinstance(display_img, np.ndarray) or display_img.dtype != np.uint8 or not display_img.flags['C_CONTIGUOUS']:
-                        print(f"[표시 오류] putText 직전 display_img 검증 실패: 타입={type(display_img)}, dtype={display_img.dtype}, 연속성={display_img.flags['C_CONTIGUOUS']}")
-                        continue
+                    # 4. putText를 위한 최종 복사본 생성 및 검증
+                    try:
+                        # 모든 검사를 통과한 image_rgb를 명시적으로 복사
+                        display_img = np.copy(image_rgb) 
                         
-                    # 6. 텍스트 추가 시도
+                        # 복사본의 유효성 재확인 (매우 중요)
+                        if not isinstance(display_img, np.ndarray) or display_img.dtype != np.uint8 or not display_img.flags['C_CONTIGUOUS']:
+                            print(f"[표시 오류] 복사 후 display_img 검증 실패: 타입={type(display_img)}, dtype={display_img.dtype}, 연속성={display_img.flags['C_CONTIGUOUS']}")
+                            continue # 이 프레임은 건너뜀
+                            
+                        print(f"[표시 정보] putText 직전 display_img 상태: 형태={display_img.shape}, 타입={display_img.dtype}, 연속성={display_img.flags['C_CONTIGUOUS']}")
+                        
+                    except Exception as copy_e:
+                        print(f"[표시 오류] 최종 이미지 복사 실패: {str(copy_e)}")
+                        continue # 복사 실패 시 건너뜀
+
+                    # 5. 텍스트 추가 시도 (이제 복사본에 적용)
                     try:
                         label = f"ZED {img_width}x{img_height}"
                         font_face = cv2.FONT_HERSHEY_SIMPLEX
@@ -391,7 +398,7 @@ def main(args):
                         thickness = 2
                         cv2.putText(display_img, label, (10, 30), font_face, font_scale, color, thickness)
                         
-                        # 7. 이미지 표시 시도
+                        # 6. 이미지 표시 시도
                         cv2.imshow("ZED Camera", display_img)
                         cv2.waitKey(1)
                         
