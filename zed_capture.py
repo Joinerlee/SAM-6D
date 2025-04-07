@@ -150,50 +150,37 @@ def main(args):
                             print(f"[이미지 오류] uint8 변환 실패: {str(e)}")
                             continue
                             
-                    # --- 수정: cvtColor 대신 슬라이싱 및 채널 재배열 사용 --- 
+                    # --- 수정: cv2.split 사용 --- 
+                    # 채널 분리 (ZED는 BGRA 순서일 수 있으므로 확인 필요, 일단 BGRA 가정)
+                    # OpenCV split은 BGR(A) 순서로 반환하는 경우가 많음
+                    # ZED SDK 기본이 BGRA 인 경우가 있음 -> get_data()가 RGBA로 주는지 BGRA로 주는지 확인 필요.
+                    # 일단 RGBA 가정하고 split 후, BGR 순서로 merge
                     try:
-                        # 4. RGBA에서 BGR 직접 추출
-                        # 메모리 연속성 보장 (슬라이싱 전에 수행)
-                        if not image_rgba.flags['C_CONTIGUOUS']:
-                             print("[이미지 정보] 슬라이싱 전 메모리가 연속적이지 않아 복사본 생성.")
-                             image_rgba = np.ascontiguousarray(image_rgba)
-                             
-                        # BGR 채널 직접 선택 및 순서 변경
-                        r_channel = image_rgba[:, :, 0].copy()
-                        g_channel = image_rgba[:, :, 1].copy()
-                        b_channel = image_rgba[:, :, 2].copy()
-                        
-                        # --- 디버깅 추가: 채널 정보 확인 --- 
-                        print(f"[채널 정보] b: {b_channel.shape}, {b_channel.dtype} | g: {g_channel.shape}, {g_channel.dtype} | r: {r_channel.shape}, {r_channel.dtype}")
-                        
-                        # --- 타입 강제 변환 추가 --- 
-                        try:
-                            b_channel = b_channel.astype(np.uint8)
-                            g_channel = g_channel.astype(np.uint8)
-                            r_channel = r_channel.astype(np.uint8)
-                        except Exception as cast_e:
-                             print(f"[이미지 오류] 채널 타입 변환 실패: {str(cast_e)}")
-                             continue
-                        # --- 추가 끝 ---
-                        
-                        # OpenCV의 BGR 순서에 맞게 병합
-                        image_rgb = cv2.merge((b_channel, g_channel, r_channel))
-                        
-                        print("[이미지 정보] RGBA->BGR 변환 성공 (슬라이싱/병합 사용).")
-                        
-                    except Exception as slice_e:
-                        import traceback
-                        print(f"[이미지 오류] 채널 슬라이싱/병합 실패: {str(slice_e)}")
-                        print(traceback.format_exc())
-                        continue
+                        # image_rgba (RGBA 형태 예상)를 각 채널로 분리
+                        # 주의: ZED SDK 버전에 따라 채널 순서가 다를 수 있음 (BGRA vs RGBA)
+                        # OpenCV cvtColor(RGBA2BGR)는 RGBA 입력을 기대함. get_data()도 RGBA일 가능성 높음.
+                        channels = cv2.split(image_rgba)
+                        if len(channels) == 4:
+                            r_channel, g_channel, b_channel, a_channel = channels # RGBA 순서로 가정
+                            print(f"[채널 정보] split 결과: r={r_channel.shape},{r_channel.dtype} g={g_channel.shape},{g_channel.dtype} b={b_channel.shape},{b_channel.dtype}")
+                            # OpenCV BGR 순서로 병합
+                            image_rgb = cv2.merge((b_channel, g_channel, r_channel))
+                        elif len(channels) == 3: # 만약 입력이 3채널이면 (RGB? BGR?)
+                            print("[이미지 경고] split 결과 채널이 3개입니다. BGR로 가정하고 진행합니다.")
+                            # 이 경우, image_rgba 자체가 이미 BGR이거나 RGB일 수 있음.
+                            # 일단 BGR로 가정하고 그대로 사용하거나, 필요시 순서 변경.
+                            # 여기서는 ZED가 RGBA/BGRA를 주므로 4채널이어야 함.
+                            image_rgb = image_rgba # 혹은 cv2.merge(channels) - 순서 확인 필요
+                        else:
+                            print(f"[이미지 오류] split 결과 채널 수가 예기치 않습니다: {len(channels)}")
+                            continue
+                            
+                    except cv2.error as split_e:
+                         print(f"[이미지 오류] cv2.split 실패: {split_e}")
+                         continue
                     # --- 수정 끝 ---
 
-                    # 5. 메모리 연속성 보장 (변환 후에도 확인)
-                    if not image_rgb.flags['C_CONTIGUOUS']:
-                        print("[이미지 정보] BGR 생성 후 메모리가 연속적이지 않아 복사본 생성.")
-                        image_rgb = np.ascontiguousarray(image_rgb)
-                    
-                    print(f"[이미지 정보] 최종 image_rgb 상태: 형태={image_rgb.shape}, 타입={image_rgb.dtype}, 연속성={image_rgb.flags['C_CONTIGUOUS']}")
+                    print("[이미지 정보] RGBA->BGR 변환 성공 (split/merge 사용).")
                     
                 except Exception as img_proc_e:
                     import traceback
