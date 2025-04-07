@@ -134,36 +134,80 @@ def main(args):
                 
                 # 이미지 데이터 가져오기 - 직접 numpy 배열로 변환하는 방식으로 수정
                 try:
-                    # numpy 배열로 직접 변환하여 복사
-                    image_rgb_np = image_zed.get_data()
+                    # 이미지 메모리 직접 접근 대신 다른 방식으로 접근
+                    if "first_debug_image" not in locals():
+                        print("이미지 데이터 추출 시도 중...")
+                        first_debug_image = True
+                    
+                    # 방법 1: np.array로 직접 변환
+                    try:
+                        image_rgba = np.array(image_zed.get_data())
+                        if image_rgba is None or not isinstance(image_rgba, np.ndarray):
+                            raise ValueError("유효하지 않은 이미지 데이터")
+                    except Exception as e:
+                        print(f"방법 1 실패: {str(e)}, 대체 방법 시도...")
+                        # 방법 2: 새로운 Mat 객체 생성 및 복사
+                        image_ocv = sl.Mat()
+                        image_zed.copy_to(image_ocv)
+                        image_rgba = image_ocv.get_data()
+                        if image_rgba is None or not isinstance(image_rgba, np.ndarray):
+                            # 방법 3: OpenCV로 직접 메모리에서 가져오기
+                            print("대체 방법도 실패, OpenCV 메모리 직접 접근 시도...")
+                            width = image_zed.get_width()
+                            height = image_zed.get_height()
+                            # 빈 이미지 생성
+                            image_rgba = np.zeros((height, width, 4), dtype=np.uint8)
+                    
+                    # 첫 번째 프레임에서만 형식 정보 출력
+                    if "first_image_format" not in locals():
+                        print(f"이미지 데이터 형식: 형태={image_rgba.shape}, 타입={image_rgba.dtype}")
+                        if len(image_rgba.shape) == 3:
+                            print(f"이미지 채널 수: {image_rgba.shape[2]}")
+                        first_image_format = True
                     
                     # 데이터가 유효한지 확인
-                    if image_rgb_np is None:
+                    if image_rgba is None:
                         print("오류: 이미지 데이터가 None입니다")
                         time.sleep(0.1)
                         continue
                     
                     # NumPy 배열 확인
-                    if not isinstance(image_rgb_np, np.ndarray):
-                        print(f"오류: 이미지 데이터가 NumPy 배열이 아닙니다 (타입: {type(image_rgb_np)})")
+                    if not isinstance(image_rgba, np.ndarray):
+                        print(f"오류: 이미지 데이터가 NumPy 배열이 아닙니다 (타입: {type(image_rgba)})")
                         time.sleep(0.1)
                         continue
                     
                     # 형태 확인
-                    if len(image_rgb_np.shape) != 3:
-                        print(f"오류: 유효하지 않은 이미지 형태: {image_rgb_np.shape}")
+                    if len(image_rgba.shape) != 3:
+                        print(f"오류: 유효하지 않은 이미지 형태: {image_rgba.shape}")
                         time.sleep(0.1)
                         continue
                     
                     # RGBA 이미지인 경우만 BGR로 변환
-                    image_rgb = image_rgb_np.copy()  # 안전한 복사본 생성
-                    if image_rgb.shape[2] == 4:
+                    if image_rgba.shape[2] == 4:
                         try:
-                            image_rgb = cv2.cvtColor(image_rgb, cv2.COLOR_RGBA2BGR)
+                            # 데이터 타입 확인 및 변환 (OpenCV는 uint8 타입을 기대함)
+                            if image_rgba.dtype != np.uint8:
+                                print(f"이미지 타입 변환: {image_rgba.dtype} -> uint8")
+                                image_rgba = image_rgba.astype(np.uint8)
+                            
+                            # OpenCV의 버전에 따라 다른 색상 변환 방식 시도
+                            try:
+                                # 방법 1: 일반적인 방법
+                                image_rgb = cv2.cvtColor(image_rgba, cv2.COLOR_RGBA2BGR)
+                            except Exception:
+                                # 방법 2: 채널 분리 후 재결합
+                                print("일반 색상 변환 실패, 채널 분리 후 재결합 시도...")
+                                b, g, r, a = cv2.split(image_rgba)
+                                image_rgb = cv2.merge([b, g, r])
+                                
                         except Exception as e:
                             print(f"색상 변환 오류: {str(e)}")
+                            print(f"이미지 형태: {image_rgba.shape}, 타입: {image_rgba.dtype}")
                             time.sleep(0.1)
                             continue
+                    else:
+                        image_rgb = image_rgba
                 except Exception as e:
                     print(f"이미지 데이터 처리 오류: {str(e)}")
                     time.sleep(0.1)
@@ -189,26 +233,55 @@ def main(args):
                 
                 # 깊이 데이터 가져오기 - 직접 numpy 배열로 변환하는 방식으로 수정
                 try:
-                    # numpy 배열로 직접 변환하여 복사
-                    depth_map_np = depth_zed.get_data()
+                    # 깊이 맵 메모리에 직접 접근 대신 다른 방식으로 접근
+                    if "first_debug_depth" not in locals():
+                        print("깊이 데이터 추출 시도 중...")
+                        first_debug_depth = True
+                    
+                    # 방법 1: np.array로 직접 변환
+                    try:
+                        depth_map_raw = np.array(depth_zed.get_data())
+                        if depth_map_raw is None or not isinstance(depth_map_raw, np.ndarray):
+                            raise ValueError("유효하지 않은 깊이 데이터")
+                    except Exception as e:
+                        print(f"깊이 방법 1 실패: {str(e)}, 대체 방법 시도...")
+                        # 방법 2: 새로운 Mat 객체 생성 및 복사
+                        depth_ocv = sl.Mat()
+                        depth_zed.copy_to(depth_ocv)
+                        depth_map_raw = depth_ocv.get_data()
+                        if depth_map_raw is None or not isinstance(depth_map_raw, np.ndarray):
+                            # 방법 3: 빈 깊이 맵 생성
+                            print("깊이 대체 방법도 실패, 빈 깊이 맵 생성...")
+                            width = depth_zed.get_width()
+                            height = depth_zed.get_height()
+                            # 빈 깊이 맵 생성
+                            depth_map_raw = np.zeros((height, width), dtype=np.float32)
+                    
+                    # 첫 번째 프레임에서만 형식 정보 출력
+                    if "first_depth_format" not in locals():
+                        print(f"깊이 데이터 형식: 형태={depth_map_raw.shape}, 타입={depth_map_raw.dtype}")
+                        if len(depth_map_raw.shape) > 0:
+                            print(f"깊이 데이터 범위: 최소={np.min(depth_map_raw)}, 최대={np.max(depth_map_raw)}")
+                        first_depth_format = True
                     
                     # 데이터가 유효한지 확인
-                    if depth_map_np is None:
+                    if depth_map_raw is None:
                         print("오류: 깊이 데이터가 None입니다")
                         time.sleep(0.1)
                         continue
                     
                     # NumPy 배열 확인
-                    if not isinstance(depth_map_np, np.ndarray):
-                        print(f"오류: 깊이 데이터가 NumPy 배열이 아닙니다 (타입: {type(depth_map_np)})")
+                    if not isinstance(depth_map_raw, np.ndarray):
+                        print(f"오류: 깊이 데이터가 NumPy 배열이 아닙니다 (타입: {type(depth_map_raw)})")
                         time.sleep(0.1)
                         continue
                     
                     # 깊이 맵 타입 변환
                     try:
-                        depth_map = depth_map_np.copy().astype(np.float32)  # 복사 및 타입 변환
+                        depth_map = depth_map_raw.astype(np.float32)  # 타입 변환
                     except Exception as e:
                         print(f"깊이 맵 타입 변환 오류: {str(e)}")
+                        print(f"깊이 맵 형태: {depth_map_raw.shape}, 타입: {depth_map_raw.dtype}")
                         time.sleep(0.1)
                         continue
                 except Exception as e:
