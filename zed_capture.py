@@ -150,9 +150,23 @@ def main(args):
                             print(f"[이미지 오류] uint8 변환 실패: {str(e)}")
                             continue
                             
-                    # 4. RGBA to BGR 변환
+                    # --- 수정: 명시적 복사본 생성 --- 
                     try:
-                        image_rgb = cv2.cvtColor(image_rgba, cv2.COLOR_RGBA2BGR)
+                        # 완전히 새로운 배열 생성
+                        image_rgba_copy = np.empty_like(image_rgba)
+                        # 데이터 복사
+                        np.copyto(image_rgba_copy, image_rgba)
+                        print("[이미지 정보] get_data() 결과를 새 배열로 복사 완료.")
+                    except Exception as copy_e:
+                        print(f"[이미지 오류] NumPy 배열 복사 실패: {str(copy_e)}")
+                        continue
+                    # --- 수정 끝 ---
+                            
+                    # 4. RGBA to BGR 변환 (복사본 사용)
+                    try:
+                        # 복사된 배열을 사용하여 변환
+                        image_rgb = cv2.cvtColor(image_rgba_copy, cv2.COLOR_RGBA2BGR)
+                        print("[이미지 정보] RGBA->BGR 변환 성공 (복사본 사용).")
                     except Exception as cvt_e:
                         print(f"[이미지 오류] RGBA->BGR 변환 실패: {str(cvt_e)}")
                         continue
