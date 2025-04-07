@@ -164,13 +164,25 @@ def main(args):
                             r_channel, g_channel, b_channel, a_channel = channels # RGBA 순서로 가정
                             print(f"[채널 정보] split 결과: r={r_channel.shape},{r_channel.dtype} g={g_channel.shape},{g_channel.dtype} b={b_channel.shape},{b_channel.dtype}")
                             # OpenCV BGR 순서로 병합
+                            # --- 추가: Merge 전 메모리 연속성 강제 --- 
+                            b_channel = np.ascontiguousarray(b_channel)
+                            g_channel = np.ascontiguousarray(g_channel)
+                            r_channel = np.ascontiguousarray(r_channel)
+                            # --- 추가 끝 ---
                             image_rgb = cv2.merge((b_channel, g_channel, r_channel))
                         elif len(channels) == 3: # 만약 입력이 3채널이면 (RGB? BGR?)
                             print("[이미지 경고] split 결과 채널이 3개입니다. BGR로 가정하고 진행합니다.")
                             # 이 경우, image_rgba 자체가 이미 BGR이거나 RGB일 수 있음.
                             # 일단 BGR로 가정하고 그대로 사용하거나, 필요시 순서 변경.
                             # 여기서는 ZED가 RGBA/BGRA를 주므로 4채널이어야 함.
-                            image_rgb = image_rgba # 혹은 cv2.merge(channels) - 순서 확인 필요
+                            # --- 추가: Merge 전 메모리 연속성 강제 (3채널 경우) ---
+                            # 만약 채널 순서가 다르다면 여기서 조정 필요
+                            c1, c2, c3 = channels
+                            c1 = np.ascontiguousarray(c1)
+                            c2 = np.ascontiguousarray(c2)
+                            c3 = np.ascontiguousarray(c3)
+                            # --- 추가 끝 ---
+                            image_rgb = cv2.merge((c1, c2, c3)) # 혹은 순서 맞게 (c3, c2, c1) 등
                         else:
                             print(f"[이미지 오류] split 결과 채널 수가 예기치 않습니다: {len(channels)}")
                             continue
