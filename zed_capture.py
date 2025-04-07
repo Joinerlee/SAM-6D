@@ -336,52 +336,85 @@ def main(args):
                     print(f"원본 깊이 맵 형태: {depth_map.shape}, 타입: {depth_map.dtype}")
                     first_frame = False
                 
-                # 중앙 640x480 영역 크롭
-                if crop_width >= 640 and crop_height >= 480:
-                    # 이미지 크기가 충분히 큰 경우 - 중앙 크롭
-                    # 이미지가 3채널인지 확인
-                    if len(image_rgb.shape) == 3 and image_rgb.shape[2] == 3:
-                        sam6d_color = image_rgb[start_y:start_y+480, start_x:start_x+640].copy()
-                        sam6d_depth = depth_map[start_y:start_y+480, start_x:start_x+640].copy()
-                    else:
-                        print("이미지 형식 오류: 3채널(BGR) 이미지가 아닙니다")
-                        continue
-                else:
-                    # 이미지 크기가 작은 경우 - 패딩 처리
-                    sam6d_color = np.zeros((480, 640, 3), dtype=np.uint8)
-                    sam6d_depth = np.zeros((480, 640), dtype=np.float32)
-                    
-                    # 패딩된 이미지의 중앙에 원본 이미지 배치
-                    pad_start_x = (640 - crop_width) // 2
-                    pad_start_y = (480 - crop_height) // 2
-                    
-                    sam6d_color[pad_start_y:pad_start_y+crop_height, pad_start_x:pad_start_x+crop_width] = image_rgb[start_y:end_y, start_x:end_x].copy()
-                    sam6d_depth[pad_start_y:pad_start_y+crop_height, pad_start_x:pad_start_x+crop_width] = depth_map[start_y:end_y, start_x:end_x].copy()
-                
-                # 표시용 Depth 이미지 생성
-                try:
-                    depth_display = np.zeros_like(sam6d_color)
-                    if np.max(sam6d_depth) > np.min(sam6d_depth):
-                        # 범위가 있는 데이터만 표시
-                        depth_norm = cv2.normalize(sam6d_depth, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
-                        depth_colormap = cv2.applyColorMap(depth_norm, cv2.COLORMAP_JET)
-                        depth_display = depth_colormap
-                except Exception as e:
-                    print(f"깊이 맵 시각화 오류: {str(e)}")
-                
                 # 이미지 및 깊이 맵 표시 준비
                 try:
-                    # 원본 이미지와 Depth 맵을 가로로 합치기
-                    display_image = np.hstack((sam6d_color, depth_display))
+                    # 먼저 유효한 이미지인지 확인
+                    if not isinstance(image_rgb, np.ndarray) or image_rgb.size == 0:
+                        print("유효하지 않은 이미지입니다")
+                        continue
+                        
+                    if not isinstance(depth_map, np.ndarray) or depth_map.size == 0:
+                        print("유효하지 않은 깊이 맵입니다")
+                        continue
                     
-                    # 설명 텍스트 추가
-                    cv2.putText(display_image, f"ZED: {img_width}x{img_height} → SAM-6D: 640x480 (중앙 크롭)", (10, 30), 
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-    
-                    # 이미지 보여주기
-                    cv2.imshow("ZED 카메라 | SAM-6D용 캡처", display_image)
+                    # 중앙 640x480 영역 추출
+                    h, w = image_rgb.shape[:2]
+                    start_x = max(0, (w - 640) // 2)
+                    start_y = max(0, (h - 480) // 2)
+                    end_x = min(w, start_x + 640)
+                    end_y = min(h, start_y + 480)
+                    
+                    # 안전하게 크롭
+                    crop_w = end_x - start_x
+                    crop_h = end_y - start_y
+                    
+                    # RGB 이미지 크롭
+                    color_img = image_rgb[start_y:end_y, start_x:end_x]
+                    
+                    # 필요하면 크기 조정
+                    if color_img.shape[:2] != (480, 640):
+                        color_disp = np.zeros((480, 640, 3), dtype=np.uint8)
+                        color_disp[:crop_h, :crop_w] = color_img
+                    else:
+                        color_disp = color_img
+                    
+                    # 깊이 맵 크롭 및 시각화
+                    depth_img = depth_map[start_y:end_y, start_x:end_x]
+                    
+                    # 깊이 맵 시각화
+                    try:
+                        # 유효한 깊이 값이 있는지 확인
+                        if np.any(depth_img > 0):
+                            # 범위가 있는 데이터만 표시
+                            depth_norm = cv2.normalize(depth_img, None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8U)
+                            depth_disp = cv2.applyColorMap(depth_norm, cv2.COLORMAP_JET)
+                            
+                            # 필요하면 크기 조정
+                            if depth_disp.shape[:2] != (480, 640):
+                                depth_full = np.zeros((480, 640, 3), dtype=np.uint8)
+                                depth_full[:crop_h, :crop_w] = depth_disp
+                                depth_disp = depth_full
+                        else:
+                            # 깊이 데이터가 없으면 검은색 이미지
+                            depth_disp = np.zeros((480, 640, 3), dtype=np.uint8)
+                    except Exception as e:
+                        print(f"깊이 맵 시각화 오류: {str(e)}")
+                        depth_disp = np.zeros((480, 640, 3), dtype=np.uint8)
+                    
+                    # 두 이미지를 가로로 합치기
+                    try:
+                        # 이미지와 깊이 맵 크기 확인
+                        if color_disp.shape[:2] == depth_disp.shape[:2]:
+                            # 두 이미지 합치기
+                            display_image = np.hstack((color_disp, depth_disp))
+                            
+                            # 텍스트 추가
+                            font = cv2.FONT_HERSHEY_SIMPLEX
+                            cv2.putText(display_image, f"ZED: {w}x{h} -> SAM-6D: 640x480", (10, 30), 
+                                      font, 0.7, (0, 255, 0), 2)
+                            
+                            # 표시
+                            cv2.imshow("ZED 카메라 | SAM-6D용 캡처", display_image)
+                            print("화면 표시 성공")
+                        else:
+                            print(f"이미지 크기 불일치: RGB={color_disp.shape}, 깊이={depth_disp.shape}")
+                    except Exception as e:
+                        print(f"이미지 합치기 오류: {str(e)}")
+                        
                 except Exception as e:
+                    import traceback
                     print(f"디스플레이 오류: {str(e)}")
+                    print(f"오류 상세정보: {traceback.format_exc()}")
                     continue
 
                 # --- 키 처리 ---
@@ -392,70 +425,88 @@ def main(args):
                 elif key == ord('s'):  # 데이터 저장
                     print("\n고품질 이미지 캡처 시작...")
                     
-                    # 고품질 이미지 캡처 (다운샘플링 없음)
-                    print("고품질 이미지 변환 중...")
-                    hq_image_rgb = zed_to_opencv_image(image_zed, downsample=1)
-                    
-                    print("고품질 깊이 맵 변환 중...")
-                    hq_depth_map = zed_to_opencv_depth(depth_zed, downsample=1)
-                    
-                    # 중앙 640x480 영역 크롭 (고품질 이미지 사용)
-                    if crop_width >= 640 and crop_height >= 480:
-                        # 이미지 크기가 충분히 큰 경우 - 중앙 크롭
-                        # 이미지가 3채널인지 확인
-                        if len(hq_image_rgb.shape) == 3 and hq_image_rgb.shape[2] == 3:
-                            sam6d_color = hq_image_rgb[start_y:start_y+480, start_x:start_x+640].copy()
-                            sam6d_depth = hq_depth_map[start_y:start_y+480, start_x:start_x+640].copy()
+                    # 고품질 이미지 캡처 준비
+                    try:
+                        # 고품질 이미지와 깊이 맵 생성 (다운샘플링 없음)
+                        print("고품질 이미지 변환 중...")
+                        hq_image_rgb = zed_to_opencv_image(image_zed, downsample=1)
+                        
+                        print("고품질 깊이 맵 변환 중...")
+                        hq_depth_map = zed_to_opencv_depth(depth_zed, downsample=1)
+                        
+                        # 중앙 640x480 영역 추출
+                        h, w = hq_image_rgb.shape[:2]
+                        start_x = max(0, (w - 640) // 2)
+                        start_y = max(0, (h - 480) // 2)
+                        end_x = min(w, start_x + 640)
+                        end_y = min(h, start_y + 480)
+                        
+                        # 안전하게 크롭
+                        crop_w = end_x - start_x
+                        crop_h = end_y - start_y
+                        
+                        # 이미지 크롭
+                        if crop_w == 640 and crop_h == 480:
+                            # 정확히 크기가 맞으면 직접 크롭
+                            sam6d_color = hq_image_rgb[start_y:end_y, start_x:end_x].copy()
+                            sam6d_depth = hq_depth_map[start_y:end_y, start_x:end_x].copy()
                         else:
-                            print("이미지 형식 오류: 3채널(BGR) 이미지가 아닙니다")
-                            continue
-                    else:
-                        # 이미지 크기가 작은 경우 - 패딩 처리
-                        sam6d_color = np.zeros((480, 640, 3), dtype=np.uint8)
-                        sam6d_depth = np.zeros((480, 640), dtype=np.float32)
+                            # 크기가 다르면 패딩 처리
+                            sam6d_color = np.zeros((480, 640, 3), dtype=np.uint8)
+                            sam6d_depth = np.zeros((480, 640), dtype=np.float32)
+                            
+                            # 중앙에 배치
+                            offset_y = (480 - crop_h) // 2
+                            offset_x = (640 - crop_w) // 2
+                            
+                            if crop_h > 0 and crop_w > 0:
+                                sam6d_color[offset_y:offset_y+crop_h, offset_x:offset_x+crop_w] = hq_image_rgb[start_y:end_y, start_x:end_x].copy()
+                                sam6d_depth[offset_y:offset_y+crop_h, offset_x:offset_x+crop_w] = hq_depth_map[start_y:end_y, start_x:end_x].copy()
                         
-                        # 패딩된 이미지의 중앙에 원본 이미지 배치
-                        pad_start_x = (640 - crop_width) // 2
-                        pad_start_y = (480 - crop_height) // 2
+                        # 타임스탬프로 폴더명 생성
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        if args.output_dir:
+                            output_dir = args.output_dir
+                        else:
+                            output_dir = f"zed_output_{timestamp}"
                         
-                        sam6d_color[pad_start_y:pad_start_y+crop_height, pad_start_x:pad_start_x+crop_width] = hq_image_rgb[start_y:end_y, start_x:end_x].copy()
-                        sam6d_depth[pad_start_y:pad_start_y+crop_height, pad_start_x:pad_start_x+crop_width] = hq_depth_map[start_y:end_y, start_x:end_x].copy()
-                    
-                    # 타임스탬프로 폴더명 생성
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    if args.output_dir:
-                        output_dir = args.output_dir
-                    else:
-                        output_dir = f"zed_output_{timestamp}"
-                    
-                    os.makedirs(output_dir, exist_ok=True)
+                        os.makedirs(output_dir, exist_ok=True)
 
-                    # 파일 경로 생성
-                    rgb_path = os.path.join(output_dir, "rgb.png")
-                    depth_path = os.path.join(output_dir, "depth.png")
-                    camera_path = os.path.join(output_dir, "camera.json")
-                    
-                    # SAM-6D용 데이터 저장
-                    cv2.imwrite(rgb_path, sam6d_color)
-                    # 16비트 PNG로 깊이 맵 저장 (SAM-6D와 호환되도록)
-                    cv2.imwrite(depth_path, sam6d_depth.astype(np.uint16))
-                    with open(camera_path, "w") as f:
-                        json.dump(intrinsics_dict, f, indent=4)
-                    
-                    print(f"SAM-6D용 데이터 저장 완료: {output_dir}")
-                    
-                    # CAD 모델 경로 출력
-                    cad_path_info = args.cad_path if args.cad_path else "/home/recl3090/SAM-6D/TAN.ply (기본값)"
-                    print(f"CAD 모델 경로: {cad_path_info}")
-                    
-                    # SAM-6D 실행 준비 완료 메시지
-                    used_cad_path = args.cad_path if args.cad_path else "/home/recl3090/SAM-6D/TAN.ply"
-                    print("\nSAM-6D 실행 환경변수 예시:")
-                    print(f"export CAD_PATH={used_cad_path}")
-                    print(f"export RGB_PATH={os.path.abspath(rgb_path)}")
-                    print(f"export DEPTH_PATH={os.path.abspath(depth_path)}")
-                    print(f"export CAMERA_PATH={os.path.abspath(camera_path)}")
-                    print(f"export OUTPUT_DIR={os.path.abspath(output_dir)}/results")
+                        # 파일 경로 생성
+                        rgb_path = os.path.join(output_dir, "rgb.png")
+                        depth_path = os.path.join(output_dir, "depth.png")
+                        camera_path = os.path.join(output_dir, "camera.json")
+                        
+                        # SAM-6D용 데이터 저장
+                        print(f"RGB 이미지 저장 중... 형태: {sam6d_color.shape}")
+                        cv2.imwrite(rgb_path, sam6d_color)
+                        
+                        # 16비트 PNG로 깊이 맵 저장 (SAM-6D와 호환되도록)
+                        print(f"깊이 맵 저장 중... 형태: {sam6d_depth.shape}")
+                        cv2.imwrite(depth_path, sam6d_depth.astype(np.uint16))
+                        
+                        # 카메라 정보 저장
+                        with open(camera_path, "w") as f:
+                            json.dump(intrinsics_dict, f, indent=4)
+                        
+                        print(f"SAM-6D용 데이터 저장 완료: {output_dir}")
+                        
+                        # CAD 모델 경로 출력
+                        cad_path_info = args.cad_path if args.cad_path else "/home/recl3090/SAM-6D/TAN.ply (기본값)"
+                        print(f"CAD 모델 경로: {cad_path_info}")
+                        
+                        # SAM-6D 실행 환경변수 예시
+                        used_cad_path = args.cad_path if args.cad_path else "/home/recl3090/SAM-6D/TAN.ply"
+                        print("\nSAM-6D 실행 환경변수 예시:")
+                        print(f"export CAD_PATH={used_cad_path}")
+                        print(f"export RGB_PATH={os.path.abspath(rgb_path)}")
+                        print(f"export DEPTH_PATH={os.path.abspath(depth_path)}")
+                        print(f"export CAMERA_PATH={os.path.abspath(camera_path)}")
+                        print(f"export OUTPUT_DIR={os.path.abspath(output_dir)}/results")
+                    except Exception as e:
+                        import traceback
+                        print(f"저장 오류: {str(e)}")
+                        print(f"오류 상세정보: {traceback.format_exc()}")
                 
             except Exception as e:
                 import traceback
