@@ -159,11 +159,6 @@ def main(args):
                              image_rgba = np.ascontiguousarray(image_rgba)
                              
                         # BGR 채널 직접 선택 및 순서 변경
-                        # image_rgba[:, :, :3] -> RGB 순서
-                        # [:, :, ::-1] -> 채널 순서 뒤집기 (RGB -> BGR)
-                        # OpenCV는 BGR 순서를 사용하므로 최종적으로 BGR이 됨
-                        # image_rgb = image_rgba[:, :, :3][:, :, ::-1]
-                        # 위 방식보다 안전한 방식: 채널 분리 후 병합
                         r_channel = image_rgba[:, :, 0].copy()
                         g_channel = image_rgba[:, :, 1].copy()
                         b_channel = image_rgba[:, :, 2].copy()
@@ -179,7 +174,7 @@ def main(args):
                         continue
                     # --- 수정 끝 ---
 
-                    # 5. 메모리 연속성 보장 (변환 후에도 확인 - cvtColor를 안 썼으므로 필요 없을 수 있으나 안전하게 유지)
+                    # 5. 메모리 연속성 보장 (변환 후에도 확인)
                     if not image_rgb.flags['C_CONTIGUOUS']:
                         print("[이미지 정보] BGR 생성 후 메모리가 연속적이지 않아 복사본 생성.")
                         image_rgb = np.ascontiguousarray(image_rgb)
