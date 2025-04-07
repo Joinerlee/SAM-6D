@@ -132,84 +132,89 @@ def main(args):
                     print(f"이미지 매트 정보: 너비={image_zed.get_width()}, 높이={image_zed.get_height()}, 채널={image_zed.get_channels()}")
                     first_frame_info = True
                 
-                # 이미지 데이터 가져오기 - 직접 numpy 배열로 변환하는 방식으로 수정
+                # 이미지 데이터 가져오기 - ZED 이미지를 OpenCV로 변환하는 방식 개선
                 try:
                     # 이미지 메모리 직접 접근 대신 다른 방식으로 접근
                     if "first_debug_image" not in locals():
                         print("이미지 데이터 추출 시도 중...")
                         first_debug_image = True
                     
-                    # 방법 1: np.array로 직접 변환
-                    try:
-                        image_rgba = np.array(image_zed.get_data())
-                        if image_rgba is None or not isinstance(image_rgba, np.ndarray):
-                            raise ValueError("유효하지 않은 이미지 데이터")
-                    except Exception as e:
-                        print(f"방법 1 실패: {str(e)}, 대체 방법 시도...")
-                        # 방법 2: 새로운 Mat 객체 생성 및 복사
-                        image_ocv = sl.Mat()
-                        image_zed.copy_to(image_ocv)
-                        image_rgba = image_ocv.get_data()
-                        if image_rgba is None or not isinstance(image_rgba, np.ndarray):
-                            # 방법 3: OpenCV로 직접 메모리에서 가져오기
-                            print("대체 방법도 실패, OpenCV 메모리 직접 접근 시도...")
-                            width = image_zed.get_width()
-                            height = image_zed.get_height()
-                            # 빈 이미지 생성
-                            image_rgba = np.zeros((height, width, 4), dtype=np.uint8)
+                    # ZED 이미지를 직접 배열로 변환하는 대신 메모리 복사 방식 사용
+                    width = image_zed.get_width()
+                    height = image_zed.get_height()
+                    
+                    # 이미지를 OpenCV 배열로 직접 복사하는 함수 구현
+                    def zed_to_opencv_image(zed_mat, downsample=4):
+                        try:
+                            # 빈 OpenCV BGR 이미지 생성
+                            opencv_image = np.zeros((height, width, 3), dtype=np.uint8)
+                            
+                            # 진행 표시 간격
+                            progress_step = height // 10
+                            
+                            # 픽셀별 접근은 느리므로 성능 향상을 위해 다운샘플링
+                            # 다운샘플링된 이미지에서 픽셀 가져오기
+                            for y in range(0, height, downsample):
+                                # 진행 상황 표시
+                                if y % progress_step == 0 and "first_progress" not in locals():
+                                    print(f"이미지 변환 중: {y/height*100:.1f}% 완료...")
+                                
+                                for x in range(0, width, downsample):
+                                    # 각 픽셀의 컬러 값 가져오기
+                                    try:
+                                        pixel = zed_mat.get_value(x, y)
+                                        
+                                        # 유효한 픽셀 범위 계산 (오버플로우 방지)
+                                        y_end = min(y+downsample, height)
+                                        x_end = min(x+downsample, width)
+                                        
+                                        # BGR 순서로 저장 (OpenCV는 BGR 형식 사용)
+                                        opencv_image[y:y_end, x:x_end, 0] = pixel[2]  # B
+                                        opencv_image[y:y_end, x:x_end, 1] = pixel[1]  # G
+                                        opencv_image[y:y_end, x:x_end, 2] = pixel[0]  # R
+                                    except Exception as e:
+                                        # 개별 픽셀 처리 오류 무시하고 계속 진행
+                                        continue
+                            
+                            # 첫 번째 변환에만 표시
+                            if "first_progress" not in locals():
+                                print("이미지 변환 완료!")
+                                first_progress = True
+                                
+                            return opencv_image
+                        except Exception as e:
+                            print(f"이미지 변환 오류: {str(e)}")
+                            # 오류 시 검은색 이미지 반환
+                            return np.zeros((height, width, 3), dtype=np.uint8)
+                    
+                    # 이미지 직접 추출 - 속도/품질 설정
+                    downsample = 4  # 기본값
+                    if args.fast_mode:
+                        downsample = 8  # 빠른 미리보기용
+                    elif args.high_quality:
+                        downsample = 1  # 고품질 저장용
+                    
+                    print(f"이미지 직접 변환 시작... (다운샘플링: {downsample}x)")
+                    # 이미지 직접 추출
+                    image_rgb = zed_to_opencv_image(image_zed, downsample)
+                    
+                    print("이미지 변환 성공!")
                     
                     # 첫 번째 프레임에서만 형식 정보 출력
                     if "first_image_format" not in locals():
-                        print(f"이미지 데이터 형식: 형태={image_rgba.shape}, 타입={image_rgba.dtype}")
-                        if len(image_rgba.shape) == 3:
-                            print(f"이미지 채널 수: {image_rgba.shape[2]}")
+                        print(f"직접 생성된 이미지 데이터 형식: 형태={image_rgb.shape}, 타입={image_rgb.dtype}")
                         first_image_format = True
                     
                     # 데이터가 유효한지 확인
-                    if image_rgba is None:
+                    if image_rgb is None:
                         print("오류: 이미지 데이터가 None입니다")
                         time.sleep(0.1)
                         continue
-                    
-                    # NumPy 배열 확인
-                    if not isinstance(image_rgba, np.ndarray):
-                        print(f"오류: 이미지 데이터가 NumPy 배열이 아닙니다 (타입: {type(image_rgba)})")
-                        time.sleep(0.1)
-                        continue
-                    
-                    # 형태 확인
-                    if len(image_rgba.shape) != 3:
-                        print(f"오류: 유효하지 않은 이미지 형태: {image_rgba.shape}")
-                        time.sleep(0.1)
-                        continue
-                    
-                    # RGBA 이미지인 경우만 BGR로 변환
-                    if image_rgba.shape[2] == 4:
-                        try:
-                            # 데이터 타입 확인 및 변환 (OpenCV는 uint8 타입을 기대함)
-                            if image_rgba.dtype != np.uint8:
-                                print(f"이미지 타입 변환: {image_rgba.dtype} -> uint8")
-                                image_rgba = image_rgba.astype(np.uint8)
-                            
-                            # OpenCV의 버전에 따라 다른 색상 변환 방식 시도
-                            try:
-                                # 방법 1: 일반적인 방법
-                                image_rgb = cv2.cvtColor(image_rgba, cv2.COLOR_RGBA2BGR)
-                            except Exception:
-                                # 방법 2: 채널 분리 후 재결합
-                                print("일반 색상 변환 실패, 채널 분리 후 재결합 시도...")
-                                b, g, r, a = cv2.split(image_rgba)
-                                image_rgb = cv2.merge([b, g, r])
-                                
-                        except Exception as e:
-                            print(f"색상 변환 오류: {str(e)}")
-                            print(f"이미지 형태: {image_rgba.shape}, 타입: {image_rgba.dtype}")
-                            time.sleep(0.1)
-                            continue
-                    else:
-                        image_rgb = image_rgba
+                
                 except Exception as e:
+                    import traceback
                     print(f"이미지 데이터 처리 오류: {str(e)}")
+                    print(f"오류 상세정보: {traceback.format_exc()}")
                     time.sleep(0.1)
                     continue
                 
@@ -231,61 +236,87 @@ def main(args):
                     print(f"깊이 매트 정보: 너비={depth_zed.get_width()}, 높이={depth_zed.get_height()}, 채널={depth_zed.get_channels()}")
                     first_depth_info = True
                 
-                # 깊이 데이터 가져오기 - 직접 numpy 배열로 변환하는 방식으로 수정
+                # 깊이 데이터 가져오기 - 직접 픽셀 단위로 접근하는 방식으로 수정
                 try:
                     # 깊이 맵 메모리에 직접 접근 대신 다른 방식으로 접근
                     if "first_debug_depth" not in locals():
                         print("깊이 데이터 추출 시도 중...")
                         first_debug_depth = True
                     
-                    # 방법 1: np.array로 직접 변환
-                    try:
-                        depth_map_raw = np.array(depth_zed.get_data())
-                        if depth_map_raw is None or not isinstance(depth_map_raw, np.ndarray):
-                            raise ValueError("유효하지 않은 깊이 데이터")
-                    except Exception as e:
-                        print(f"깊이 방법 1 실패: {str(e)}, 대체 방법 시도...")
-                        # 방법 2: 새로운 Mat 객체 생성 및 복사
-                        depth_ocv = sl.Mat()
-                        depth_zed.copy_to(depth_ocv)
-                        depth_map_raw = depth_ocv.get_data()
-                        if depth_map_raw is None or not isinstance(depth_map_raw, np.ndarray):
-                            # 방법 3: 빈 깊이 맵 생성
-                            print("깊이 대체 방법도 실패, 빈 깊이 맵 생성...")
-                            width = depth_zed.get_width()
-                            height = depth_zed.get_height()
+                    # 깊이 맵 직접 메모리 복사 방식
+                    width = depth_zed.get_width()
+                    height = depth_zed.get_height()
+                    
+                    # 깊이 맵 직접 복사 함수
+                    def zed_to_opencv_depth(depth_mat, downsample=4):
+                        try:
                             # 빈 깊이 맵 생성
-                            depth_map_raw = np.zeros((height, width), dtype=np.float32)
+                            opencv_depth = np.zeros((height, width), dtype=np.float32)
+                            
+                            # 진행 표시 간격
+                            progress_step = height // 10
+                            
+                            # 픽셀별 접근은 느리므로 성능 향상을 위해 다운샘플링
+                            for y in range(0, height, downsample):
+                                # 진행 상황 표시
+                                if y % progress_step == 0 and "first_depth_progress" not in locals():
+                                    print(f"깊이 맵 변환 중: {y/height*100:.1f}% 완료...")
+                                    
+                                for x in range(0, width, downsample):
+                                    try:
+                                        # 각 픽셀의 깊이 값 가져오기
+                                        depth_value = depth_mat.get_value(x, y)
+                                        
+                                        # 유효한 픽셀 범위 계산 (오버플로우 방지)
+                                        y_end = min(y+downsample, height)
+                                        x_end = min(x+downsample, width)
+                                        
+                                        # 유효한 깊이값만 사용
+                                        if depth_value[0] < 0:  # 무효한 깊이 값
+                                            opencv_depth[y:y_end, x:x_end] = 0.0
+                                        else:
+                                            opencv_depth[y:y_end, x:x_end] = depth_value[0]  # 밀리미터 단위 깊이
+                                    except Exception as e:
+                                        # 개별 픽셀 처리 오류 무시하고 계속 진행
+                                        continue
+                                        
+                            # 첫 번째 변환에만 표시
+                            if "first_depth_progress" not in locals():
+                                print("깊이 맵 변환 완료!")
+                                first_depth_progress = True
+                                
+                            return opencv_depth
+                        except Exception as e:
+                            print(f"깊이 맵 변환 오류: {str(e)}")
+                            # 오류 시 영행렬 반환
+                            return np.zeros((height, width), dtype=np.float32)
+                    
+                    # 깊이 맵 직접 추출 - 속도/품질 설정
+                    print(f"깊이 맵 직접 변환 시작... (다운샘플링: {downsample}x)")
+                    # 깊이 맵 직접 추출
+                    depth_map = zed_to_opencv_depth(depth_zed, downsample)
+                    
+                    print("깊이 맵 변환 성공!")
                     
                     # 첫 번째 프레임에서만 형식 정보 출력
                     if "first_depth_format" not in locals():
-                        print(f"깊이 데이터 형식: 형태={depth_map_raw.shape}, 타입={depth_map_raw.dtype}")
-                        if len(depth_map_raw.shape) > 0:
-                            print(f"깊이 데이터 범위: 최소={np.min(depth_map_raw)}, 최대={np.max(depth_map_raw)}")
+                        print(f"직접 생성된 깊이 데이터 형식: 형태={depth_map.shape}, 타입={depth_map.dtype}")
+                        if len(depth_map.shape) > 0:
+                            depth_min = np.min(depth_map)
+                            depth_max = np.max(depth_map)
+                            print(f"깊이 데이터 범위: 최소={depth_min}, 최대={depth_max}")
                         first_depth_format = True
                     
                     # 데이터가 유효한지 확인
-                    if depth_map_raw is None:
+                    if depth_map is None:
                         print("오류: 깊이 데이터가 None입니다")
                         time.sleep(0.1)
                         continue
                     
-                    # NumPy 배열 확인
-                    if not isinstance(depth_map_raw, np.ndarray):
-                        print(f"오류: 깊이 데이터가 NumPy 배열이 아닙니다 (타입: {type(depth_map_raw)})")
-                        time.sleep(0.1)
-                        continue
-                    
-                    # 깊이 맵 타입 변환
-                    try:
-                        depth_map = depth_map_raw.astype(np.float32)  # 타입 변환
-                    except Exception as e:
-                        print(f"깊이 맵 타입 변환 오류: {str(e)}")
-                        print(f"깊이 맵 형태: {depth_map_raw.shape}, 타입: {depth_map_raw.dtype}")
-                        time.sleep(0.1)
-                        continue
                 except Exception as e:
+                    import traceback
                     print(f"깊이 데이터 처리 오류: {str(e)}")
+                    print(f"오류 상세정보: {traceback.format_exc()}")
                     time.sleep(0.1)
                     continue
                 
@@ -359,6 +390,37 @@ def main(args):
                     print("종료 중...")
                     break
                 elif key == ord('s'):  # 데이터 저장
+                    print("\n고품질 이미지 캡처 시작...")
+                    
+                    # 고품질 이미지 캡처 (다운샘플링 없음)
+                    print("고품질 이미지 변환 중...")
+                    hq_image_rgb = zed_to_opencv_image(image_zed, downsample=1)
+                    
+                    print("고품질 깊이 맵 변환 중...")
+                    hq_depth_map = zed_to_opencv_depth(depth_zed, downsample=1)
+                    
+                    # 중앙 640x480 영역 크롭 (고품질 이미지 사용)
+                    if crop_width >= 640 and crop_height >= 480:
+                        # 이미지 크기가 충분히 큰 경우 - 중앙 크롭
+                        # 이미지가 3채널인지 확인
+                        if len(hq_image_rgb.shape) == 3 and hq_image_rgb.shape[2] == 3:
+                            sam6d_color = hq_image_rgb[start_y:start_y+480, start_x:start_x+640].copy()
+                            sam6d_depth = hq_depth_map[start_y:start_y+480, start_x:start_x+640].copy()
+                        else:
+                            print("이미지 형식 오류: 3채널(BGR) 이미지가 아닙니다")
+                            continue
+                    else:
+                        # 이미지 크기가 작은 경우 - 패딩 처리
+                        sam6d_color = np.zeros((480, 640, 3), dtype=np.uint8)
+                        sam6d_depth = np.zeros((480, 640), dtype=np.float32)
+                        
+                        # 패딩된 이미지의 중앙에 원본 이미지 배치
+                        pad_start_x = (640 - crop_width) // 2
+                        pad_start_y = (480 - crop_height) // 2
+                        
+                        sam6d_color[pad_start_y:pad_start_y+crop_height, pad_start_x:pad_start_x+crop_width] = hq_image_rgb[start_y:end_y, start_x:end_x].copy()
+                        sam6d_depth[pad_start_y:pad_start_y+crop_height, pad_start_x:pad_start_x+crop_width] = hq_depth_map[start_y:end_y, start_x:end_x].copy()
+                    
                     # 타임스탬프로 폴더명 생성
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     if args.output_dir:
@@ -412,6 +474,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="ZED 카메라를 사용하여 SAM-6D용 데이터 캡처")
     parser.add_argument("--output_dir", type=str, help="출력 디렉토리 경로")
     parser.add_argument("--cad_path", type=str, default="/home/recl3090/SAM-6D/TAN.ply", help="CAD 모델 경로(.ply 파일)")
+    parser.add_argument("--fast_mode", action="store_true", help="빠른 모드 사용 (다운샘플링 8x, 미리보기 전용)")
+    parser.add_argument("--high_quality", action="store_true", help="고품질 모드 사용 (다운샘플링 없음, 저장시 권장)")
     args = parser.parse_args()
     
     main(args) 
