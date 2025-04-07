@@ -129,7 +129,7 @@ def main(args):
                         continue
                         
                     # CPU 메모리로 데이터 가져오기
-                    image_rgba = image_zed.get_data(sl.MEM.CPU)
+                    image_rgba = image_zed.get_data()
                     
                     # 1. 유효성 검사 (초기)
                     if image_rgba is None or not isinstance(image_rgba, np.ndarray) or image_rgba.size == 0:
@@ -150,34 +150,26 @@ def main(args):
                             print(f"[이미지 오류] uint8 변환 실패: {str(e)}")
                             continue
                             
-                    # --- 수정: NumPy 슬라이싱 및 copy() 사용 --- 
-                    # ZED SDK의 get_data(sl.MEM.CPU)는 보통 BGRA 순서로 반환
+                    # --- 수정: 완전히 새로운 BGR 배열 생성 ---
                     try:
-                        # 1. 메모리 연속성 보장
-                        if not image_rgba.flags['C_CONTIGUOUS']:
-                             print("[이미지 정보] 슬라이싱 전 메모리가 연속적이지 않아 복사본 생성.")
-                             image_rgba = np.ascontiguousarray(image_rgba)
-                             
-                        # 2. BGRA에서 BGR 채널 직접 슬라이싱 및 복사
-                        # .copy()를 사용하여 완전히 새로운 메모리 공간에 BGR 생성
-                        image_rgb = image_rgba[:, :, :3].copy()
+                        # 새로운 배열 생성 - opencv에서 처리할 수 있도록 완전히 새로운 배열 생성
+                        height, width = image_rgba.shape[:2]
+                        image_rgb = np.zeros((height, width, 3), dtype=np.uint8)
                         
-                        # 3. 결과 확인 (형태, 타입, 연속성)
-                        if image_rgb.shape[2] != 3 or image_rgb.dtype != np.uint8:
-                            print(f"[이미지 오류] 슬라이싱 후 BGR 형식이 아닙니다: {image_rgb.shape}, {image_rgb.dtype}")
-                            continue
-                            
-                        # 4. 최종 메모리 연속성 확인 (copy() 했으므로 보통 True)
+                        # BGRA에서 BGR 채널 복사 (OpenCV 형식은 BGR)
+                        image_rgb[:, :, 0] = image_rgba[:, :, 0].copy()  # Blue
+                        image_rgb[:, :, 1] = image_rgba[:, :, 1].copy()  # Green
+                        image_rgb[:, :, 2] = image_rgba[:, :, 2].copy()  # Red
+                        
+                        # 메모리 연속성 확인 및 보장
                         if not image_rgb.flags['C_CONTIGUOUS']:
-                             print("[이미지 경고] copy() 후에도 메모리가 연속적이지 않습니다.")
-                             # 필요시 다시 한번 보장
-                             # image_rgb = np.ascontiguousarray(image_rgb)
-                             
-                        print(f"[이미지 정보] BGRA->BGR 변환 성공 (NumPy slice + copy). 최종 상태: {image_rgb.shape}, {image_rgb.dtype}, 연속성={image_rgb.flags['C_CONTIGUOUS']}")
+                            image_rgb = np.ascontiguousarray(image_rgb)
+                        
+                        print(f"[이미지 정보] BGRA->BGR 변환 성공 (새 배열 생성). 형태={image_rgb.shape}, 타입={image_rgb.dtype}, 연속성={image_rgb.flags['C_CONTIGUOUS']}")
                         
                     except Exception as slice_copy_e:
                         import traceback
-                        print(f"[이미지 오류] NumPy 슬라이싱/복사 실패: {str(slice_copy_e)}")
+                        print(f"[이미지 오류] 이미지 변환 실패: {str(slice_copy_e)}")
                         print(traceback.format_exc())
                         continue
                     # --- 수정 끝 ---
@@ -203,19 +195,22 @@ def main(args):
                         continue
                         
                     # CPU 메모리로 데이터 가져오기 (float32 예상)
-                    depth_map = depth_zed.get_data(sl.MEM.CPU)
+                    depth_map_raw = depth_zed.get_data()
                     
                     # 1. 유효성 검사 (초기)
-                    if depth_map is None or not isinstance(depth_map, np.ndarray) or depth_map.size == 0:
+                    if depth_map_raw is None or not isinstance(depth_map_raw, np.ndarray) or depth_map_raw.size == 0:
                         print("[깊이 오류] get_data() 결과가 유효하지 않습니다.")
                         continue
                         
-                    # 2. 형태 확인 (2D)
+                    # 2. 새로운 배열 생성 - 깊이 맵도 새로운 배열로 복사
+                    depth_map = depth_map_raw.copy()
+                    
+                    # 3. 형태 확인 (2D)
                     if len(depth_map.shape) != 2:
                         print(f"[깊이 오류] 2차원 깊이 맵이 아닙니다: {depth_map.shape}")
                         continue
                         
-                    # 3. 데이터 타입 확인 (float32)
+                    # 4. 데이터 타입 확인 (float32)
                     if depth_map.dtype != np.float32:
                         print(f"[깊이 정보] 데이터 타입이 float32가 아닙니다: {depth_map.dtype}. 변환 시도...")
                         try:
@@ -224,7 +219,7 @@ def main(args):
                             print(f"[깊이 오류] float32 변환 실패: {str(e)}")
                             continue
                     
-                    # 4. 메모리 연속성 보장
+                    # 5. 메모리 연속성 보장
                     if not depth_map.flags['C_CONTIGUOUS']:
                         print("[깊이 정보] 메모리가 연속적이지 않아 복사본 생성.")
                         depth_map = np.ascontiguousarray(depth_map)
@@ -244,18 +239,24 @@ def main(args):
                          print(f"[표시 오류] imshow 직전 image_rgb 최종 검증 실패")
                          continue
                     
+                    # OpenCV가 사용할 수 있는 더 작은 크기로 이미지 크기 조정 (디버깅용)
+                    display_img = cv2.resize(image_rgb, (640, 360))
+                    
+                    # 이미지 타입 출력 (디버깅)
+                    print(f"[디버그] 표시 이미지 타입: {type(display_img)}, 형태: {display_img.shape}, 타입: {display_img.dtype}")
+                    
                     # imshow 시도
-                    cv2.imshow("ZED Camera", image_rgb)
-                    cv2.waitKey(1)
-                    print("[표시 정보] imshow 호출 성공")
+                    cv2.imshow("ZED Camera", display_img)
+                    # 키 처리 (waitKey는 한 번만 호출)
+                    key = cv2.waitKey(1) & 0xFF
                         
                 except Exception as e:
                     import traceback
                     print(f"[표시 오류] imshow 오류: {str(e)}")
                     print(traceback.format_exc())
+                    continue
 
                 # --- 키 처리 ---
-                key = cv2.waitKey(1) & 0xFF
                 if key == ord('q') or key == 27:  # 종료
                     print("종료 중...")
                     break
@@ -362,6 +363,7 @@ if __name__ == "__main__":
     parser.add_argument("--cad_path", type=str, default="/home/recl3090/SAM-6D/TAN.ply", help="CAD 모델 경로(.ply 파일)")
     parser.add_argument("--fast_mode", action="store_true", help="빠른 모드 사용 (다운샘플링 8x, 미리보기 전용)")
     parser.add_argument("--high_quality", action="store_true", help="고품질 모드 사용 (다운샘플링 없음, 저장시 권장)")
+    parser.add_argument("--skip_display", action="store_true", help="화면 표시 건너뛰기 (오류 발생 시 사용)")
     args = parser.parse_args()
     
     main(args) 
