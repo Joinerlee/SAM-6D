@@ -380,19 +380,23 @@ def main(args):
                         
                     print(f"[표시 정보] putText 직전 image_rgb 상태: 형태={image_rgb.shape}, 타입={image_rgb.dtype}, 연속성={image_rgb.flags['C_CONTIGUOUS']}")
 
-                    # 5. 텍스트 추가 시도 (이제 image_rgb 원본에 적용) - 주석 처리
-                    # try:
+                    # 5. 텍스트 추가 시도 (이제 image_rgb 원본에 적용)
+                    try:
                         # 여기서 image_rgb에 직접 텍스트를 그리도록 시도
-                        # label = f"ZED {img_width}x{img_height}"
-                        # font_face = cv2.FONT_HERSHEY_SIMPLEX
-                        # font_scale = 0.7
-                        # color = (0, 255, 0)  # BGR 형식 (녹색)
-                        # thickness = 2
-                        # putText를 image_rgb에 직접 적용
-                        # cv2.putText(image_rgb, label, (10, 30), font_face, font_scale, color, thickness)
-                        
-                    # 6. 이미지 표시 시도 (수정된 image_rgb 사용)
-                    try: # imshow만 별도 try 블록으로 감쌈
+                        label = f"ZED {img_width}x{img_height}"
+                        font_face = cv2.FONT_HERSHEY_SIMPLEX
+                        font_scale = 0.7
+                        color = (0, 255, 0)  # BGR 형식 (녹색)
+                        thickness = 2
+                        # putText를 image_rgb에 직접 적용 - 별도 try 블록
+                        try:
+                            cv2.putText(image_rgb, label, (10, 30), font_face, font_scale, color, thickness)
+                            print("[표시 정보] putText 호출 성공!")
+                        except Exception as text_e:
+                            print(f"[표시 오류] putText 함수 자체에서 오류 발생: {str(text_e)}")
+                            # 오류 발생 시 텍스트 없이 진행
+
+                        # 6. 이미지 표시 시도 (텍스트 추가 여부와 관계없이 진행)
                         cv2.imshow("ZED Camera", image_rgb)
                         cv2.waitKey(1)
                         # 성공 메시지는 디버깅을 위해 유지
@@ -400,7 +404,7 @@ def main(args):
                         
                     except Exception as e:
                         import traceback
-                        print(f"[표시 오류] imshow 오류: {str(e)}")
+                        print(f"[표시 오류] 텍스트 추가 또는 imshow 오류: {str(e)}")
                         print(traceback.format_exc())
                 
                 except Exception as e:
