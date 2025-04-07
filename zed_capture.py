@@ -134,18 +134,21 @@ def main(args):
                 
                 # 이미지 데이터 가져오기 - ZED 이미지를 OpenCV로 변환하는 방식 개선
                 try:
-                    # 이미지 메모리 직접 접근 대신 다른 방식으로 접근
-                    if "first_debug_image" not in locals():
-                        print("이미지 데이터 추출 시도 중...")
-                        first_debug_image = True
+                    # 이미지 직접 추출 - 속도/품질 설정
+                    downsample = 4  # 기본값
+                    if args.fast_mode:
+                        downsample = 8  # 빠른 미리보기용
+                    elif args.high_quality:
+                        downsample = 1  # 고품질 저장용
                     
-                    # ZED 이미지를 직접 배열로 변환하는 대신 메모리 복사 방식 사용
-                    width = image_zed.get_width()
-                    height = image_zed.get_height()
-                    
-                    # 이미지를 OpenCV 배열로 직접 복사하는 함수 구현
+                    print(f"이미지 직접 변환 시작... (다운샘플링: {downsample}x)")
+                    # 이미지 직접 추출 함수 수정
                     def zed_to_opencv_image(zed_mat, downsample=4):
                         try:
+                            # 이미지 크기 정보 얻기
+                            width = zed_mat.get_width()
+                            height = zed_mat.get_height()
+                            
                             # 빈 OpenCV BGR 이미지 생성
                             opencv_image = np.zeros((height, width, 3), dtype=np.uint8)
                             
@@ -156,7 +159,7 @@ def main(args):
                             # 다운샘플링된 이미지에서 픽셀 가져오기
                             for y in range(0, height, downsample):
                                 # 진행 상황 표시
-                                if y % progress_step == 0 and "first_progress" not in locals():
+                                if y % progress_step == 0:
                                     print(f"이미지 변환 중: {y/height*100:.1f}% 완료...")
                                 
                                 for x in range(0, width, downsample):
@@ -177,26 +180,27 @@ def main(args):
                                         continue
                             
                             # 첫 번째 변환에만 표시
-                            if "first_progress" not in locals():
-                                print("이미지 변환 완료!")
-                                first_progress = True
-                                
+                            print("이미지 변환 완료!")
+                            
+                            # 확실히 연속된 메모리를 사용하는 배열로 변환
+                            opencv_image = np.ascontiguousarray(opencv_image)
+                            
                             return opencv_image
                         except Exception as e:
                             print(f"이미지 변환 오류: {str(e)}")
                             # 오류 시 검은색 이미지 반환
                             return np.zeros((height, width, 3), dtype=np.uint8)
                     
-                    # 이미지 직접 추출 - 속도/품질 설정
-                    downsample = 4  # 기본값
-                    if args.fast_mode:
-                        downsample = 8  # 빠른 미리보기용
-                    elif args.high_quality:
-                        downsample = 1  # 고품질 저장용
-                    
-                    print(f"이미지 직접 변환 시작... (다운샘플링: {downsample}x)")
-                    # 이미지 직접 추출
+                    # 이미지 직접 추출 및 검증
                     image_rgb = zed_to_opencv_image(image_zed, downsample)
+                    
+                    # 반환된 이미지 검증
+                    if image_rgb is None or not isinstance(image_rgb, np.ndarray) or image_rgb.size == 0:
+                        print("오류: 유효하지 않은 이미지가 생성되었습니다. 검은색 이미지로 대체합니다.")
+                        image_rgb = np.zeros((img_height, img_width, 3), dtype=np.uint8)
+                    elif not image_rgb.flags['C_CONTIGUOUS']:
+                        print("경고: 이미지가 메모리에 연속적으로 저장되어 있지 않습니다. 연속 배열로 변환합니다.")
+                        image_rgb = np.ascontiguousarray(image_rgb)
                     
                     print("이미지 변환 성공!")
                     
@@ -259,7 +263,7 @@ def main(args):
                             # 픽셀별 접근은 느리므로 성능 향상을 위해 다운샘플링
                             for y in range(0, height, downsample):
                                 # 진행 상황 표시
-                                if y % progress_step == 0 and "first_depth_progress" not in locals():
+                                if y % progress_step == 0:
                                     print(f"깊이 맵 변환 중: {y/height*100:.1f}% 완료...")
                                     
                                 for x in range(0, width, downsample):
@@ -280,10 +284,11 @@ def main(args):
                                         # 개별 픽셀 처리 오류 무시하고 계속 진행
                                         continue
                                         
-                            # 첫 번째 변환에만 표시
-                            if "first_depth_progress" not in locals():
-                                print("깊이 맵 변환 완료!")
-                                first_depth_progress = True
+                            # 변환 완료 메시지
+                            print("깊이 맵 변환 완료!")
+                            
+                            # 확실히 연속된 메모리를 사용하는 배열로 변환
+                            opencv_depth = np.ascontiguousarray(opencv_depth)
                                 
                             return opencv_depth
                         except Exception as e:
@@ -295,6 +300,14 @@ def main(args):
                     print(f"깊이 맵 직접 변환 시작... (다운샘플링: {downsample}x)")
                     # 깊이 맵 직접 추출
                     depth_map = zed_to_opencv_depth(depth_zed, downsample)
+                    
+                    # 반환된 깊이 맵 검증
+                    if depth_map is None or not isinstance(depth_map, np.ndarray) or depth_map.size == 0:
+                        print("오류: 유효하지 않은 깊이 맵이 생성되었습니다. 빈 깊이 맵으로 대체합니다.")
+                        depth_map = np.zeros((img_height, img_width), dtype=np.float32)
+                    elif not depth_map.flags['C_CONTIGUOUS']:
+                        print("경고: 깊이 맵이 메모리에 연속적으로 저장되어 있지 않습니다. 연속 배열로 변환합니다.")
+                        depth_map = np.ascontiguousarray(depth_map)
                     
                     print("깊이 맵 변환 성공!")
                     
@@ -336,30 +349,68 @@ def main(args):
                     print(f"원본 깊이 맵 형태: {depth_map.shape}, 타입: {depth_map.dtype}")
                     first_frame = False
                 
-                # 이미지 표시 처리 - 단순화
+                # 이미지 표시 처리 - 안전성 강화
                 try:
-                    # 유효한 이미지인지 확인
-                    if not isinstance(image_rgb, np.ndarray):
+                    # 유효한 이미지인지 엄격하게 확인
+                    if image_rgb is None or not isinstance(image_rgb, np.ndarray) or image_rgb.size == 0:
                         print("유효하지 않은 이미지입니다")
                         continue
                     
-                    # OpenCV 창에 이미지 직접 표시 (크롭하지 않고)
+                    # 타입 검사 추가
+                    print(f"이미지 타입: {type(image_rgb)}, 형태: {image_rgb.shape}, 데이터타입: {image_rgb.dtype}")
+                    
+                    # 이미지가 numpy 배열인지 확인
+                    if not isinstance(image_rgb, np.ndarray):
+                        print("이미지가 numpy 배열이 아닙니다.")
+                        continue
+                    
+                    # RGB 채널 확인 (3채널인지)
+                    if len(image_rgb.shape) != 3 or image_rgb.shape[2] != 3:
+                        print(f"3채널 RGB 이미지가 아닙니다: {image_rgb.shape}")
+                        continue
+                        
+                    # 데이터 타입 확인 (uint8인지)
+                    if image_rgb.dtype != np.uint8:
+                        print(f"이미지 데이터 타입이 uint8이 아닙니다: {image_rgb.dtype}")
+                        # uint8로 변환 시도
+                        try:
+                            image_rgb = image_rgb.astype(np.uint8)
+                            print("이미지를 uint8로 변환했습니다.")
+                        except Exception as e:
+                            print(f"이미지 변환 실패: {str(e)}")
+                            continue
+                    
+                    # 이미지 복사 (무결성 확인)
                     try:
-                        # 이미지만 표시 (깊이 맵 스킵)
-                        display_img = image_rgb.copy()  # 안전한 복사본 생성
+                        display_img = np.copy(image_rgb)
+                        print(f"이미지 복사 성공: {display_img.shape}, 타입: {display_img.dtype}")
                         
-                        # 내부 파라미터 표시
+                        # OpenCV가 처리할 수 있는 연속된 메모리인지 확인
+                        if not display_img.flags['C_CONTIGUOUS']:
+                            print("이미지가 메모리에 연속적으로 저장되어 있지 않습니다. 복사본 생성...")
+                            display_img = np.ascontiguousarray(display_img)
+                            
+                        # 이제 안전하게 putText 적용
                         label = f"ZED {img_width}x{img_height}"
-                        cv2.putText(display_img, label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                        font_face = cv2.FONT_HERSHEY_SIMPLEX
+                        font_scale = 0.7
+                        color = (0, 255, 0)  # BGR 형식 (녹색)
+                        thickness = 2
+                        cv2.putText(display_img, label, (10, 30), font_face, font_scale, color, thickness)
                         
-                        # 이미지 표시 (깊이 맵 없이)
+                        # 이미지 표시
                         cv2.imshow("ZED Camera", display_img)
+                        cv2.waitKey(1)  # 화면 업데이트를 위해 필요
                         
                     except Exception as e:
+                        import traceback
                         print(f"이미지 표시 오류: {str(e)}")
+                        print(traceback.format_exc())
                 
                 except Exception as e:
+                    import traceback
                     print(f"디스플레이 처리 오류: {str(e)}")
+                    print(traceback.format_exc())
 
                 # --- 키 처리 ---
                 key = cv2.waitKey(1) & 0xFF
