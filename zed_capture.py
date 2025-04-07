@@ -93,6 +93,10 @@ def main(args):
     
     print("\n's' 키를 눌러 데이터를 저장하고, 'q' 또는 ESC 키를 눌러 종료하세요.")
     
+    # --- 추가: OpenCV 윈도우 명시적 생성 ---
+    cv2.namedWindow("ZED Camera", cv2.WINDOW_NORMAL) 
+    # -------------------------------------
+    
     # 크롭할 시작 위치 계산 (중앙 기준) - 루프 밖에서 미리 계산
     end_x = min(img_width, start_x + 640)
     end_y = min(img_height, start_y + 480)
